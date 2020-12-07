@@ -21,15 +21,13 @@ class DashamDatasetLoader:
         # get lat,lon and speed curve
         cursor.execute(
             '''
-            SELECT X(Coordinate),Y(Coordinate),playback_sec 
+            SELECT X(Coordinate),Y(Coordinate),playback_sec,timestamp/1000000
             FROM Locations 
             WHERE file_id=(?)
             ''', 
             (id,)
             )
-        rows = cursor.fetchall()
-        for row in rows:
-            print(row)
+        return file_name, np.array(cursor.fetchall())
 
     # ctor
     def __init__(self):
@@ -49,7 +47,8 @@ class DashamDatasetLoader:
 
 def main():
     loader = DashamDatasetLoader()
-    loader.next()
+    file_name, trajectory=loader.next()
+    print(trajectory.shape)
 
 if __name__ == "__main__":
     main()
