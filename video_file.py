@@ -32,7 +32,7 @@ class DashamDatasetLoader:
     # ctor
     def __init__(self):
         print("Loading database from '" + self.db + "'")
-        assert os.path.isfile(self.db), "Database file is not readbale"
+        assert os.path.isfile(self.db), "Database file is not readable"
         try:
             self.connection = sqlite3.connect(self.db)        
         except sqlite3.Error:
@@ -46,8 +46,10 @@ class DashamDatasetLoader:
         self.connection.close()
 
 def main():
+    os.system('clear') # clear the terminal on linux
     loader = DashamDatasetLoader()
     file_name, trajectory=loader.next()
+    del loader # free memory
     print(trajectory.shape)
 
 if __name__ == "__main__":
