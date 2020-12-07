@@ -6,7 +6,8 @@ import cv2
 class DashamDatasetLoader:
     db=os.environ['HOME']+'/.dashcam.software/dashcam.index'
     connection = None
-    
+    FPS=0
+
     def next(self):
         cursor=self.connection.cursor()
         # get file path
@@ -52,6 +53,7 @@ class DashamDatasetLoader:
 class FrameGenerator:
     cap = None
     frameCount = 0
+    pos_msec = 0
 
     def __init__(self,fn):
         self.cap = cv2.VideoCapture(fn)
@@ -64,6 +66,14 @@ class FrameGenerator:
     def __del__(self):
         del self.cap
 
+    # read next frame
+    def next(self):
+        ret, img = self.cap.read()
+        if ret and img is not None:
+            self.pos_msec = int(self.cap.get(cv2.CAP_PROP_POS_MSEC))
+            return True, img
+        return False, None
+
 def main():
     os.system('clear') # clear the terminal on linux
     #   
@@ -74,6 +84,15 @@ def main():
     #
     # Use OpenCV to load frame sequence and video temporal charateristics
     framer = FrameGenerator(file_name)
+    while True:
+        ret, img = framer.next()
+        if ret is not True:
+            break
+        cv2.imshow(file_name, img)
+        # define q as the exit button
+        if cv2.waitKey(int(1000./framer.FPS)) & 0xFF == ord('q'):
+            break
+    del framer
 
 if __name__ == "__main__":
     main()
