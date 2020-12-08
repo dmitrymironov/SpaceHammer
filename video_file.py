@@ -11,6 +11,33 @@ class KineticModel:
     coords = None
     R = 6372800  # Earth radius
 
+    # 
+    # Earth-center touching radian angle of the triangle (c1,c2,Earth Center)
+    #
+    
+    def ec_angle(self, c1, c2):
+        lat1, lon1 = c1
+        lat2, lon2 = c2
+        sin_lat = np.sin(np.radians(lat2-lat1))
+        sin_lon = np.sin(np.radians(lon2-lon1))
+        s3 = 2*self.R*np.sqrt(sin_lat*sin_lat+sin_lon*sin_lon)
+        return 2*np.arcsin(s3/(2*self.R))
+        
+    #
+    # Heading (degrees)
+    #
+
+    def heading(self,A,B,C):
+        # https://en.wikipedia.org/wiki/Solution_of_triangles#Solving_spherical_triangles
+        a = self.ec_angle(C, B)
+        b = self.ec_angle(A, C)
+        c = self.ec_angle(A, B)
+
+        # alpha
+        return np.rad2deg(np.arccos(
+            (np.cos(a)-np.cos(b)*np.cos(c))/(np.sin(b)*np.sin(c))
+            ))
+
     #
     # Geodesial distance
     #
@@ -41,7 +68,7 @@ class KineticModel:
         lat2 = np.insert(lat, 0, 0.0)  # all but the last element
         lon2 = np.insert(lon, 0, 0.0)
 
-        self.dist = self.short_distance(lat1, lon1, lat2, lon2)
+        self.dist = self.haversine(lat1, lon1, lat2, lon2)
         self.dist[0] = 0 # we can not approximate vector in the first point
 
         '''
