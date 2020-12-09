@@ -6,12 +6,14 @@ from numpy.polynomial import Polynomial as P
 
 #
 # Kinetic model of a vehicle handling oversampling
-# TODO: Going full precision geodesical calculation is suboptimal for 
+# TODO: Going full precision geodesical calculation is suboptimal for
 # TODO: sub-50 meters distances, need fast approximation model
 #
 
-def sigmoid(z,b=0.):
+
+def sigmoid(z, b=0.):
     return 1/(1 + np.exp(b-z))
+
 
 class KineticModel:
     R = 6372800  # Earth radius
@@ -68,7 +70,7 @@ class KineticModel:
     def __init__(self, trajectory):
         lat = trajectory[:, 0]
         lon = trajectory[:, 1]
-        fakeZero = 1e-20 # stability epsilon
+        fakeZero = 1e-20  # stability epsilon
 
         #
         # Construct temporal interpolation
@@ -78,13 +80,13 @@ class KineticModel:
         t0 = self.T[0]
         self.T -= t0
         self.T *= 1000
-        #print(self.T)
+        # print(self.T)
 
         # a,b,c coefs for x and y.
-        # Polynomial degree 10 is a sever overfitting but works well
+        # Polynomial degree 10 is a severe overfitting but works well
         self.interpolation = {}
-        self.interpolation['x'] = P.fit(self.T, lat, 10)
-        self.interpolation['y'] = P.fit(self.T, lon, 10)
+        self.interpolation['lat'] = P.fit(self.T, lat, 10)
+        self.interpolation['lon'] = P.fit(self.T, lon, 10)
 
         '''
         import matplotlib.pyplot as plt
@@ -105,10 +107,10 @@ class KineticModel:
 
         # calculate next vector distance
         self.dist = self.haversine(lat1, lon1, lat2, lon2)
-        self.dist[0] = 0 # we can not approximate vector in the first point
+        self.dist[0] = 0  # we can not approximate vector in the first point
 
         # calculate next vector bearing, generate 3 vectors with shift 1
-        lat1 = np.append(lat, [fakeZero, fakeZero]) # 2 zeros in the end
+        lat1 = np.append(lat, [fakeZero, fakeZero])  # 2 zeros in the end
         lon1 = np.append(lon, [fakeZero, fakeZero])
         # angle point
         lat2 = np.insert(lat, 0, fakeZero)  # zero in the beginning and end
@@ -125,15 +127,6 @@ class KineticModel:
         # Sign-less precision way to do it
         self.bearing = self.bearing((lat1,lon1),(lat2,lon2),(lat3,lon3))
         '''
-        # Flat earth cheating
-        # https://stackoverflow.com/questions/14066933/direct-way-of-computing-clockwise-angle-between-2-vectors
-        x1=lat2-lat1
-        y1=lon2-lon1
-        x2=lat3-lat2
-        y2=lon3-lon2
-        dot = x1*x2+y1*y2
-        det = x1*y2-y1*x2
-        self.bearing = np.rad2deg(np.arctan2(det,dot))
 
         # shape tweak
         self.bearing[1] = 0
@@ -142,11 +135,12 @@ class KineticModel:
         # Speed estimation
         approxSpeed = self.haversine(lat1, lon1, lat2, lon2)*3600./1000.
         approxSpeed[0] = 0
-        approxSpeed=approxSpeed[:-1]
+        approxSpeed = approxSpeed[:-1]
         gps_speed = trajectory[:, 3]
 
         # apply minimum speed threshold
-        minSpeedThreshold=10.0 # Angle fluctuations are terrible on low speed due to GPS noise
+        # Angle fluctuations are terrible on low speed due to GPS noise
+        minSpeedThreshold = 10.0
         self.bearing = (approxSpeed >= minSpeedThreshold).astype(
             int)*self.bearing
 
@@ -159,12 +153,40 @@ class KineticModel:
                 lat[i], lon[i], self.dist[i], gps_speed[i], self.bearing[i]))
         '''
 
-    def p(self,Tmsec):
-        return self.interpolation['x'](Tmsec), self.interpolation['y'](Tmsec)
+    def bearing(self,t1,t2,t3):
+        lat1,lon1=self.p(t1)
+        lat2,lon2=self.p(t2)
+        lat3,lon3=self.p(t3)
+        # Flat earth cheating
+        # https://stackoverflow.com/questions/14066933/direct-way-of-computing-clockwise-angle-between-2-vectors
+        x1 = lat2-lat1
+        y1 = lon2-lon1
+        x2 = lat3-lat2
+        y2 = lon3-lon2
+        dot = x1*x2+y1*y2
+        det = x1*y2-y1*x2
+        return np.rad2deg(np.arctan2(det, dot))
+
+    def speed(self, Tmsec):
+        dlat = self.interpolation['lat'].deriv(Tmsec)
+        dlon = self.interpolation['lon'].deriv(Tmsec)
+        return np.sqrt(dlat**2+dlon**2)
+
+    # distance between two moments (msec)
+    def dist(self, t1, t2):
+        lat1, lon1 = self.p(t1)
+        lat2, lon2 = self.p(t2)
+        return self.haversine(lat1, lon1, lat2, lon2)
+
+    # interpolated smooth coordinate at time point
+    def p(self, Tmsec):
+        return self.interpolation['lat'](Tmsec), self.interpolation['lon'](Tmsec)
 
 #
 # DashamDatasetLoader
 #
+
+
 class DashamDatasetLoader:
     db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     connection = None
@@ -272,7 +294,7 @@ def main():
     #
     # Get the file and load it's spatial and temporal ground truth
     loader = DashamDatasetLoader()
-    file_name  = loader.next()
+    file_name = loader.next()
     return 0
     #
     # Use OpenCV to load frame sequence and video temporal charateristics
