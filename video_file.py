@@ -14,7 +14,6 @@ def sigmoid(z,b=0.):
     return 1/(1 + np.exp(b-z))
 
 class KineticModel:
-    coords = None
     R = 6372800  # Earth radius
     # interpolated polynomial coefficients
     interpolation = []
@@ -70,6 +69,33 @@ class KineticModel:
         lat = trajectory[:, 0]
         lon = trajectory[:, 1]
         fakeZero = 1e-20 # stability epsilon
+
+        #
+        # Construct temporal interpolation
+        #
+
+        self.T = trajectory[:, 2]
+        t0 = self.T[0]
+        self.T -= t0
+        self.T *= 1000
+        #print(self.T)
+
+        # a,b,c coefs for x and y.
+        # Polynomial degree 10 is a sever overfitting but works well
+        self.interpolation = {}
+        self.interpolation['x'] = P.fit(self.T, lat, 10)
+        self.interpolation['y'] = P.fit(self.T, lon, 10)
+
+        '''
+        import matplotlib.pyplot as plt
+        ml = np.min(lon)
+        lon-=ml
+        plt.plot(self.T,lon,'o')
+        xvals = np.linspace(0,59000,100)
+        yvals = self.interpolation['y'](xvals) - ml
+        plt.plot(xvals,yvals,'-x')
+        plt.show()
+        '''
 
         # TODO: lots of array duplication, q&d for debugging
         lat1 = np.append(lat, fakeZero)
@@ -132,16 +158,6 @@ class KineticModel:
             print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}".format(
                 lat[i], lon[i], self.dist[i], gps_speed[i], self.bearing[i]))
         '''
-        self.T = trajectory[:, 2]
-        t0 = self.T[0]
-        self.T -= t0
-        self.T *= 1000
-        #print(self.T)
-
-        # a,b,c coefs for x and y
-        self.interpolation={}
-        self.interpolation['x'] = P.fit(self.T, lat, 3)
-        self.interpolation['y'] = P.fit(self.T, lon, 3)
 
     def p(self,Tmsec):
         return self.interpolation['x'](Tmsec), self.interpolation['y'](Tmsec)
