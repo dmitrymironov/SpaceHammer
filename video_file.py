@@ -2,6 +2,7 @@ import numpy as np
 import sqlite3
 import os
 import cv2
+from numpy.polynomial import Polynomial as P
 
 #
 # Kinetic model of a vehicle handling oversampling
@@ -15,6 +16,8 @@ def sigmoid(z,b=0.):
 class KineticModel:
     coords = None
     R = 6372800  # Earth radius
+    # interpolated polynomial coefficients
+    interpolation = []
 
     #
     # Geodesial distance
@@ -30,6 +33,9 @@ class KineticModel:
 
         return 2*self.R*np.arctan2(np.sqrt(a), np.sqrt(1 - a))
 
+    '''
+    # geodesical sphere precision
+
     # 
     # Earth-center touching radian angle of the triangle (c1,c2,Earth Center)
     #
@@ -42,7 +48,7 @@ class KineticModel:
         s3 = np.sqrt(sin_lat*sin_lat+sin_lon*sin_lon)
         arg = np.clip(s3/(2.*self.R),-1,1)
         return 2*np.arcsin(arg)
-        
+    
     #
     # bearing (degrees, internal angle, no sign)
     #
@@ -58,6 +64,7 @@ class KineticModel:
 
         # alpha
         return np.rad2deg(np.pi-np.arccos(arg))
+    '''
 
     def __init__(self, trajectory):
         lat = trajectory[:, 0]
@@ -118,18 +125,26 @@ class KineticModel:
             int)*self.bearing
 
         assert self.bearing.shape == self.dist.shape
-
+        '''
         # Cross-refrerencing GPS speed vs recorded
         print("lat      \tlon      \tdist\tspeed\tangle")
         for i in range(len(lat)):
             print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}".format(
                 lat[i], lon[i], self.dist[i], gps_speed[i], self.bearing[i]))
-
+        '''
         self.T = trajectory[:, 2]
         t0 = self.T[0]
         self.T -= t0
         self.T *= 1000
         #print(self.T)
+
+        # a,b,c coefs for x and y
+        self.interpolation={}
+        self.interpolation['x'] = P.fit(self.T, lat, 3)
+        self.interpolation['y'] = P.fit(self.T, lon, 3)
+
+    def p(self,Tmsec):
+        return self.interpolation['x'](Tmsec), self.interpolation['y'](Tmsec)
 
 #
 # DashamDatasetLoader
@@ -242,7 +257,7 @@ def main():
     # Get the file and load it's spatial and temporal ground truth
     loader = DashamDatasetLoader()
     file_name  = loader.next()
-    #return 0
+    return 0
     #
     # Use OpenCV to load frame sequence and video temporal charateristics
     framer = FrameGenerator(file_name)
