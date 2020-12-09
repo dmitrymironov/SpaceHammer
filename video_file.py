@@ -5,38 +5,16 @@ import cv2
 
 #
 # Kinetic model of a vehicle handling oversampling
+# TODO: Going full precision geodesical calculation is suboptimal for 
+# TODO: sub-50 meters distances, need fast approximation model
 #
+
+def sigmoid(z,b=0.):
+    return 1/(1 + np.exp(b-z))
 
 class KineticModel:
     coords = None
     R = 6372800  # Earth radius
-
-    # 
-    # Earth-center touching radian angle of the triangle (c1,c2,Earth Center)
-    #
-    
-    def ec_angle(self, c1, c2):
-        lat1, lon1 = c1
-        lat2, lon2 = c2
-        sin_lat = np.sin(np.radians(lat2-lat1))
-        sin_lon = np.sin(np.radians(lon2-lon1))
-        s3 = 2*self.R*np.sqrt(sin_lat*sin_lat+sin_lon*sin_lon)
-        return 2*np.arcsin(s3/(2*self.R))
-        
-    #
-    # Heading (degrees)
-    #
-
-    def heading(self,A,B,C):
-        # https://en.wikipedia.org/wiki/Solution_of_triangles#Solving_spherical_triangles
-        a = self.ec_angle(C, B)
-        b = self.ec_angle(A, C)
-        c = self.ec_angle(A, B)
-
-        # alpha
-        return np.rad2deg(np.arccos(
-            (np.cos(a)-np.cos(b)*np.cos(c))/(np.sin(b)*np.sin(c))
-            ))
 
     #
     # Geodesial distance
@@ -51,34 +29,101 @@ class KineticModel:
             np.cos(phi1)*np.cos(phi2)*np.sin(dlambda/2)**2
 
         return 2*self.R*np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+
+    # 
+    # Earth-center touching radian angle of the triangle (c1,c2,Earth Center)
+    #
+    
+    def ec_angle(self, c1, c2):
+        lat1, lon1 = c1
+        lat2, lon2 = c2
+        sin_lat = 2*self.R*np.sin(np.radians(lat2-lat1)/2)
+        sin_lon = 2*self.R*np.sin(np.radians(lon2-lon1)/2)
+        s3 = np.sqrt(sin_lat*sin_lat+sin_lon*sin_lon)
+        arg = np.clip(s3/(2.*self.R),-1,1)
+        return 2*np.arcsin(arg)
         
-    # https://www.movable-type.co.uk/scripts/latlong.html
-    def short_distance(self, lat1, lon1, lat2, lon2):
-        # flat earthers
-        t1=(np.pi/2)-np.radians(lat1)
-        t2=(np.pi/2)-np.radians(lat2)
-        #return (self.R * np.sqrt(t1*t1+t2*t2-2*t1*t2*np.cos(np.radians(lon2-lon1)))).astype(int)
-        return self.R * np.sqrt(t1*t1+t2*t2-2*t1*t2*np.cos(np.radians(lon2-lon1)))
+    #
+    # bearing (degrees, internal angle, no sign)
+    #
+
+    def bearing(self,C,A,B):      
+
+        # https://en.wikipedia.org/wiki/Solution_of_triangles#Solving_spherical_triangles
+        a  = self.ec_angle(B, C)
+        b  = self.ec_angle(C, A)
+        c  = self.ec_angle(A, B)
+
+        arg = np.clip((np.cos(a)-np.cos(b)*np.cos(c))/(1e-50+np.sin(b)*np.sin(c)),-1,1)
+
+        # alpha
+        return np.rad2deg(np.pi-np.arccos(arg))
 
     def __init__(self, trajectory):
         lat = trajectory[:, 0]
         lon = trajectory[:, 1]
-        lat1 = np.append(lat, 0.0)
-        lon1 = np.append(lon, 0.0)
-        lat2 = np.insert(lat, 0, 0.0)  # all but the last element
-        lon2 = np.insert(lon, 0, 0.0)
+        fakeZero = 1e-20 # stability epsilon
 
+        # TODO: lots of array duplication, q&d for debugging
+        lat1 = np.append(lat, fakeZero)
+        lon1 = np.append(lon, fakeZero)
+        lat2 = np.insert(lat, 0, fakeZero)  # all but the last element
+        lon2 = np.insert(lon, 0, fakeZero)
+
+        # calculate next vector distance
         self.dist = self.haversine(lat1, lon1, lat2, lon2)
         self.dist[0] = 0 # we can not approximate vector in the first point
 
+        # calculate next vector bearing, generate 3 vectors with shift 1
+        lat1 = np.append(lat, [fakeZero, fakeZero]) # 2 zeros in the end
+        lon1 = np.append(lon, [fakeZero, fakeZero])
+        # angle point
+        lat2 = np.insert(lat, 0, fakeZero)  # zero in the beginning and end
+        lon2 = np.insert(lon, 0, fakeZero)
+        lat2 = np.append(lat2, fakeZero)  # 2 zeros in the end
+        lon2 = np.append(lon2, fakeZero)
+        # closing point
+        lat3 = np.insert(lat, 0, fakeZero)
+        lat3 = np.insert(lat3, 0, fakeZero)
+        lon3 = np.insert(lon, 0, fakeZero)
+        lon3 = np.insert(lon3, 0, fakeZero)
+
         '''
-        # Cross-refrerencing GPS speed vs recorded
-        approxSpeed = self.short_distance(lat1, lon1, lat2, lon2)*3600./1000.
-        approxSpeed[0] = -1
+        # Sign-less precision way to do it
+        self.bearing = self.bearing((lat1,lon1),(lat2,lon2),(lat3,lon3))
+        '''
+        # Flat earth cheating
+        # https://stackoverflow.com/questions/14066933/direct-way-of-computing-clockwise-angle-between-2-vectors
+        x1=lat2-lat1
+        y1=lon2-lon1
+        x2=lat3-lat2
+        y2=lon3-lon2
+        dot = x1*x2+y1*y2
+        det = x1*y2-y1*x2
+        self.bearing = np.rad2deg(np.arctan2(det,dot))
+
+        # shape tweak
+        self.bearing[1] = 0
+        self.bearing = self.bearing[:-1]
+
+        # Speed estimation
+        approxSpeed = self.haversine(lat1, lon1, lat2, lon2)*3600./1000.
+        approxSpeed[0] = 0
+        approxSpeed=approxSpeed[:-1]
         gps_speed = trajectory[:, 3]
+
+        # apply minimum speed threshold
+        minSpeedThreshold=10.0 # Angle fluctuations are terrible on low speed due to GPS noise
+        self.bearing = (approxSpeed >= minSpeedThreshold).astype(
+            int)*self.bearing
+
+        assert self.bearing.shape == self.dist.shape
+
+        # Cross-refrerencing GPS speed vs recorded
+        print("lat      \tlon      \tdist\tspeed\tangle")
         for i in range(len(lat)):
-            print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}".format(lat[i],lon[i],approxSpeed[i],gps_speed[i]))
-        '''
+            print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}".format(
+                lat[i], lon[i], self.dist[i], gps_speed[i], self.bearing[i]))
 
         self.T = trajectory[:, 2]
         t0 = self.T[0]
@@ -98,11 +143,13 @@ class DashamDatasetLoader:
     def next(self):
         cursor = self.connection.cursor()
         # get file path
+        # AND f.name LIKE "%6038%" AND d.path NOT LIKE '%Monument%'
         cursor.execute(
             '''
             SELECT f.id,d.path || "/" || f.name 
             FROM Files as f, Folders as d 
             WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id
+            AND f.name LIKE "%6038%" AND d.path NOT LIKE '%Monument%'
             LIMIT 1 
             '''
         )
@@ -182,6 +229,15 @@ class FrameGenerator:
 def main():
     os.system('clear')  # clear the terminal on linux
 
+    '''
+    # quick test case
+    data = np.zeros((3,4))
+    data[0, :] = [45.375624, -122.761118, 1000, 30]
+    data[1, :] = [45.375579, -122.767429, 1000, 20]
+    data[2, :] = [45.375679, -122.767419, 1000, 10]
+    m = KineticModel(data)
+    return 0
+    '''
     #
     # Get the file and load it's spatial and temporal ground truth
     loader = DashamDatasetLoader()
