@@ -34,39 +34,6 @@ class KineticModel:
 
         return 2*self.R*np.arctan2(np.sqrt(a), np.sqrt(1 - a))
 
-    '''
-    # geodesical sphere precision
-
-    # 
-    # Earth-center touching radian angle of the triangle (c1,c2,Earth Center)
-    #
-    
-    def ec_angle(self, c1, c2):
-        lat1, lon1 = c1
-        lat2, lon2 = c2
-        sin_lat = 2*self.R*np.sin(np.radians(lat2-lat1)/2)
-        sin_lon = 2*self.R*np.sin(np.radians(lon2-lon1)/2)
-        s3 = np.sqrt(sin_lat*sin_lat+sin_lon*sin_lon)
-        arg = np.clip(s3/(2.*self.R),-1,1)
-        return 2*np.arcsin(arg)
-    
-    #
-    # bearing (degrees, internal angle, no sign)
-    #
-
-    def bearing(self,C,A,B):      
-
-        # https://en.wikipedia.org/wiki/Solution_of_triangles#Solving_spherical_triangles
-        a  = self.ec_angle(B, C)
-        b  = self.ec_angle(C, A)
-        c  = self.ec_angle(A, B)
-
-        arg = np.clip((np.cos(a)-np.cos(b)*np.cos(c))/(1e-50+np.sin(b)*np.sin(c)),-1,1)
-
-        # alpha
-        return np.rad2deg(np.pi-np.arccos(arg))
-    '''
-
     def __init__(self, trajectory):
         lat = trajectory[:, 0]
         lon = trajectory[:, 1]
@@ -80,13 +47,17 @@ class KineticModel:
         t0 = self.T[0]
         self.T -= t0
         self.T *= 1000
-        # print(self.T)
 
-        # a,b,c coefs for x and y.
+        # Cross-refrerencing GPS speed vs recorded
+        gps_speed = trajectory[:, 3]
+
         # Polynomial degree 10 is a severe overfitting but works well
+        FEC = 285799889
         self.interpolation = {}
         self.interpolation['lat'] = P.fit(self.T, lat, 10)
         self.interpolation['lon'] = P.fit(self.T, lon, 10)
+        self.interpolation['dlat'] = FEC*self.interpolation['lat'].deriv()
+        self.interpolation['dlon'] = FEC*self.interpolation['lon'].deriv()
 
         '''
         import matplotlib.pyplot as plt
@@ -94,71 +65,26 @@ class KineticModel:
         lon-=ml
         plt.plot(self.T,lon,'o')
         xvals = np.linspace(0,59000,100)
-        yvals = self.interpolation['y'](xvals) - ml
+        yvals = self.interpolation['lon'](xvals) - ml
         plt.plot(xvals,yvals,'-x')
         plt.show()
         '''
 
-        # TODO: lots of array duplication, q&d for debugging
-        lat1 = np.append(lat, fakeZero)
-        lon1 = np.append(lon, fakeZero)
-        lat2 = np.insert(lat, 0, fakeZero)  # all but the last element
-        lon2 = np.insert(lon, 0, fakeZero)
-
-        # calculate next vector distance
-        self.dist = self.haversine(lat1, lon1, lat2, lon2)
-        self.dist[0] = 0  # we can not approximate vector in the first point
-
-        # calculate next vector bearing, generate 3 vectors with shift 1
-        lat1 = np.append(lat, [fakeZero, fakeZero])  # 2 zeros in the end
-        lon1 = np.append(lon, [fakeZero, fakeZero])
-        # angle point
-        lat2 = np.insert(lat, 0, fakeZero)  # zero in the beginning and end
-        lon2 = np.insert(lon, 0, fakeZero)
-        lat2 = np.append(lat2, fakeZero)  # 2 zeros in the end
-        lon2 = np.append(lon2, fakeZero)
-        # closing point
-        lat3 = np.insert(lat, 0, fakeZero)
-        lat3 = np.insert(lat3, 0, fakeZero)
-        lon3 = np.insert(lon, 0, fakeZero)
-        lon3 = np.insert(lon3, 0, fakeZero)
-
         '''
-        # Sign-less precision way to do it
-        self.bearing = self.bearing((lat1,lon1),(lat2,lon2),(lat3,lon3))
-        '''
-
-        # shape tweak
-        self.bearing[1] = 0
-        self.bearing = self.bearing[:-1]
-
-        # Speed estimation
-        approxSpeed = self.haversine(lat1, lon1, lat2, lon2)*3600./1000.
-        approxSpeed[0] = 0
-        approxSpeed = approxSpeed[:-1]
-        gps_speed = trajectory[:, 3]
-
-        # apply minimum speed threshold
-        # Angle fluctuations are terrible on low speed due to GPS noise
-        minSpeedThreshold = 10.0
-        self.bearing = (approxSpeed >= minSpeedThreshold).astype(
-            int)*self.bearing
-
-        assert self.bearing.shape == self.dist.shape
-        '''
-        # Cross-refrerencing GPS speed vs recorded
+        # MSE print((np.square(gps_speed - self.speed(self.T))).mean())
         print("lat      \tlon      \tdist\tspeed\tangle")
-        for i in range(len(lat)):
+        for T in range(self.T[0].astype(int), 1000+self.T[-1].astype(int), 1000):
+            Plat, Plon = self.p(T)
+            idx = int(T / 1000)
+            d = self.dist(T, T+1000)
             print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}".format(
-                lat[i], lon[i], self.dist[i], gps_speed[i], self.bearing[i]))
+                Plat, Plon, d, self.speed(T)-self.dist(T,T-1000)*18./5., self.bearing(T-500, T, T+200)))
         '''
 
-    def bearing(self,t1,t2,t3):
-        lat1,lon1=self.p(t1)
-        lat2,lon2=self.p(t2)
-        lat3,lon3=self.p(t3)
-        # Flat earth cheating
-        # https://stackoverflow.com/questions/14066933/direct-way-of-computing-clockwise-angle-between-2-vectors
+    def bearing(self, t1, t2, t3):
+        lat1, lon1 = self.p(t1)
+        lat2, lon2 = self.p(t2)
+        lat3, lon3 = self.p(t3)
         x1 = lat2-lat1
         y1 = lon2-lon1
         x2 = lat3-lat2
@@ -168,8 +94,8 @@ class KineticModel:
         return np.rad2deg(np.arctan2(det, dot))
 
     def speed(self, Tmsec):
-        dlat = self.interpolation['lat'].deriv(Tmsec)
-        dlon = self.interpolation['lon'].deriv(Tmsec)
+        dlat = self.interpolation['dlat'](Tmsec)
+        dlon = self.interpolation['dlon'](Tmsec)
         return np.sqrt(dlat**2+dlon**2)
 
     # distance between two moments (msec)
@@ -180,7 +106,7 @@ class KineticModel:
 
     # interpolated smooth coordinate at time point
     def p(self, Tmsec):
-        return self.interpolation['lat'](Tmsec), self.interpolation['lon'](Tmsec)
+        return self.interpolation['lat'](Tmsec), self.interpolation['lon'](Tmsec), self.speed(Tmsec)
 
 #
 # DashamDatasetLoader
@@ -202,7 +128,6 @@ class DashamDatasetLoader:
             SELECT f.id,d.path || "/" || f.name 
             FROM Files as f, Folders as d 
             WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id
-            AND f.name LIKE "%6038%" AND d.path NOT LIKE '%Monument%'
             LIMIT 1 
             '''
         )
