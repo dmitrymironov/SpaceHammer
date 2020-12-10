@@ -53,8 +53,8 @@ class KineticModel:
         # Polynomial degree 10 is a severe overfitting but works well
         FEC = 285799889
         self.interpolation = {}
-        self.interpolation['lat'] = P.fit(self.T, lat, 20)
-        self.interpolation['lon'] = P.fit(self.T, lon, 20)
+        self.interpolation['lat'] = P.fit(self.T, lat, 10)
+        self.interpolation['lon'] = P.fit(self.T, lon, 10)
         self.interpolation['dlat'] = FEC*self.interpolation['lat'].deriv()
         self.interpolation['dlon'] = FEC*self.interpolation['lon'].deriv()
 
@@ -74,7 +74,7 @@ class KineticModel:
             # (self.speed(T)>5).astype(int)*
             angle[idx] = (self.speed(T) > 5).astype(int) * \
                 self.bearing(T-Twindow, T, T+Twindow)
-        self.interpolation['angle']=P.fit(T_angle_sampling,angle,30)
+        self.interpolation['angle']=P.fit(T_angle_sampling,angle,3)
 
         # Angle plot
         if False:
@@ -85,24 +85,29 @@ class KineticModel:
             plt.plot(xvals, yvals, '-x')
             plt.show()
 
-        # Lat/Lon
-        if False:
+        # Lat/Lon show
+        if True:
             import matplotlib.pyplot as plt
-            mlon = np.min(lon)
-            lon -= mlon
-            plt.plot(self.T,lon,'o')
-            xvals = np.linspace(0,58000,100)
-            yvals = self.interpolation['lon'](xvals) - mlon
-            plt.plot(xvals,yvals,'-x')
-            plt.show()
-            mlat = np.min(lat)
-            lat -= mlat
-            plt.plot(self.T, lat, 'o')
             xvals = np.linspace(0, 58000, 100)
+            fig, axs = plt.subplots(3)
+            fig.suptitle('Booblik')
+            mlon = np.min(lon)
+            Jlon = lon - mlon
+            axs[0].plot(self.T,Jlon,'o')
+            yvals = self.interpolation['lon'](xvals) - mlon
+            axs[0].plot(xvals,yvals,'-x')
+            mlat = np.min(lat)
+            Jlat = lat - mlat
+            axs[1].plot(self.T, Jlat, 'o')
             yvals = self.interpolation['lat'](xvals) - mlat
-            plt.plot(xvals, yvals, '-x')
+            axs[1].plot(xvals, yvals, '-x')
+            # 2D path
+            axs[2].plot(lat,lon, '-o')
+            x,y=self.p(xvals)
+            print(lat[0])
+            print(x[0])
+            axs[2].plot(x,y,'-x')
             plt.show()
-
 
         # XML
         if True:
@@ -131,8 +136,8 @@ class KineticModel:
             step=100
             for T in range(self.T[0].astype(int), step+self.T[-1].astype(int), step):
                 Plat, Plon = self.p(T)
-                f.write(Plat,Plon,0.0)
-                
+                f.write("{},{},{}\n".format(Plon,Plat,0.0))
+
             f.write('''</coordinates>
                     </LineString>
                     </Placemark>
