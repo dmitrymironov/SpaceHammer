@@ -10,7 +10,6 @@ from numpy.polynomial import Polynomial as P
 # TODO: sub-50 meters distances, need fast approximation model
 #
 
-
 def sigmoid(z, b=0.):
     return 1/(1 + np.exp(b-z))
 
@@ -54,32 +53,106 @@ class KineticModel:
         # Polynomial degree 10 is a severe overfitting but works well
         FEC = 285799889
         self.interpolation = {}
-        self.interpolation['lat'] = P.fit(self.T, lat, 10)
-        self.interpolation['lon'] = P.fit(self.T, lon, 10)
+        self.interpolation['lat'] = P.fit(self.T, lat, 20)
+        self.interpolation['lon'] = P.fit(self.T, lon, 20)
         self.interpolation['dlat'] = FEC*self.interpolation['lat'].deriv()
         self.interpolation['dlon'] = FEC*self.interpolation['lon'].deriv()
 
-        '''
-        import matplotlib.pyplot as plt
-        ml = np.min(lon)
-        lon-=ml
-        plt.plot(self.T,lon,'o')
-        xvals = np.linspace(0,59000,100)
-        yvals = self.interpolation['lon'](xvals) - ml
-        plt.plot(xvals,yvals,'-x')
-        plt.show()
-        '''
+        # Sample dy/dx aka trajectory rotation angle with descrete step
+        # significant enough to exceed averge GPS noise. 
+        # Considering it's done on a high-degree smoothing polinomial 
+        # that has derivative in any point we likely don't care that much
+        # still averaging on a bigger vector gives less angles fluctuation
+        step = 100 # 1/10th of a second
+        Twindow=10
+        Nsteps = int((self.T[-1].astype(int)+np.max([Twindow,step])-self.T[0].astype(int))/step)
+        angle = np.zeros(Nsteps)
+        T_angle_sampling = np.zeros(Nsteps)
+        for idx in range(Nsteps):
+            T=self.T[0].astype(int)+step*idx
+            T_angle_sampling[idx]=T
+            # (self.speed(T)>5).astype(int)*
+            angle[idx] = (self.speed(T) > 5).astype(int) * \
+                self.bearing(T-Twindow, T, T+Twindow)
+        self.interpolation['angle']=P.fit(T_angle_sampling,angle,30)
 
-        '''
+        # Angle plot
+        if False:
+            import matplotlib.pyplot as plt
+            plt.plot(T_angle_sampling, angle, 'o')
+            xvals = np.linspace(0, 58000, 100)
+            yvals = self.interpolation['angle'](xvals)
+            plt.plot(xvals, yvals, '-x')
+            plt.show()
+
+        # Lat/Lon
+        if False:
+            import matplotlib.pyplot as plt
+            mlon = np.min(lon)
+            lon -= mlon
+            plt.plot(self.T,lon,'o')
+            xvals = np.linspace(0,58000,100)
+            yvals = self.interpolation['lon'](xvals) - mlon
+            plt.plot(xvals,yvals,'-x')
+            plt.show()
+            mlat = np.min(lat)
+            lat -= mlat
+            plt.plot(self.T, lat, 'o')
+            xvals = np.linspace(0, 58000, 100)
+            yvals = self.interpolation['lat'](xvals) - mlat
+            plt.plot(xvals, yvals, '-x')
+            plt.show()
+
+
+        # XML
+        if True:
+            f = open('/home/dmi/Desktop/dbg.kml','w')
+            f.write('''<?xml version="1.0" encoding="UTF-8"?>
+                    <kml xmlns="http://www.opengis.net/kml/2.2">
+                    <Document>
+                    <Placemark>
+                    <name>/mnt/video/Folders/31-July-2020/DCIM/105UNSVD/GRMN0099.MP4</name>
+                    <Description></Description>
+                    <Style id="yellowLineGreenPoly">
+                    <LineStyle>
+                    <color>ff0000ff</color>
+                    <width>10</width>
+                    </LineStyle>
+                    <PolyStyle>
+                    <color> 00ff0000 </color>
+                    </PolyStyle>
+                    </Style>
+                    <LineString>
+                    <extrude>1</extrude>
+                    <tessellate>1</tessellate>
+                    <altitudeMode>clampToGround</altitudeMode>
+                    <coordinates>''')
+
+            step=100
+            for T in range(self.T[0].astype(int), step+self.T[-1].astype(int), step):
+                Plat, Plon = self.p(T)
+                f.write(Plat,Plon,0.0)
+                
+            f.write('''</coordinates>
+                    </LineString>
+                    </Placemark>
+                    </Document>
+                    </kml>
+                    ''')
+            f.close()
+
         # MSE print((np.square(gps_speed - self.speed(self.T))).mean())
-        print("lat      \tlon      \tdist\tspeed\tangle")
-        for T in range(self.T[0].astype(int), 1000+self.T[-1].astype(int), 1000):
+        #'''
+        print("lat      \tlon      \tdist\tspeed\tVgps\tangle\tT")
+        step=1000
+        for T in range(self.T[0].astype(int), step+self.T[-1].astype(int), step):
             Plat, Plon = self.p(T)
-            idx = int(T / 1000)
-            d = self.dist(T, T+1000)
-            print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}".format(
-                Plat, Plon, d, self.speed(T)-self.dist(T,T-1000)*18./5., self.bearing(T-500, T, T+200)))
-        '''
+            idx = int(T / step)
+            d = self.dist(T, T+step)
+            print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
+                Plat, Plon, d, self.speed(T), gps_speed[idx], self.angle(T),T
+                ))
+        #'''
 
     def bearing(self, t1, t2, t3):
         lat1, lon1 = self.p(t1)
@@ -106,12 +179,15 @@ class KineticModel:
 
     # interpolated smooth coordinate at time point
     def p(self, Tmsec):
-        return self.interpolation['lat'](Tmsec), self.interpolation['lon'](Tmsec), self.speed(Tmsec)
+        return self.interpolation['lat'](Tmsec), \
+            self.interpolation['lon'](Tmsec)
+
+    def angle(self,Tmsec):
+        return self.interpolation['angle'](Tmsec)
 
 #
 # DashamDatasetLoader
 #
-
 
 class DashamDatasetLoader:
     db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
@@ -161,10 +237,12 @@ class DashamDatasetLoader:
     def __del__(self):
         self.connection.close()
 
+# define class variable 
+loader = DashamDatasetLoader()
+
 #
 # Use OpenCV to grab frames and build a time sequence
 #
-
 
 class FrameGenerator:
     file_name = ''
@@ -194,15 +272,30 @@ class FrameGenerator:
         return False, None
 
     def play(self, rate=1./30.):
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fontScale = 1
+        # B G R 
+        red = (0,0,255)
+        blue = (255, 0, 0)
+        thickness = 2
+
         while True:
             ret, img = self.next()
             if ret is not True:
                 break
+            lat,lon=loader.kinetic_model.p(self.pos_msec)
+            V = loader.kinetic_model.speed(self.pos_msec)
+            A = loader.kinetic_model.angle(self.pos_msec)
+            txt1 = "{:.6f} {:.6f}".format(lat, lon)
+            txt2 = "{:3.2f} km/h   {:3.2f} deg".format(V, A)
+            cv2.putText(img, txt1, (670, 1000), font,
+                        fontScale, red, thickness, cv2.LINE_AA)
+            cv2.putText(img, txt2, (1070, 1030), font,
+                        fontScale, blue, thickness, cv2.LINE_AA)
             cv2.imshow(self.file_name, img)
             # define q as the exit button
             if cv2.waitKey(int(1000./(rate*self.FPS))) & 0xFF == ord('q'):
                 break
-
 
 def main():
     os.system('clear')  # clear the terminal on linux
@@ -218,9 +311,8 @@ def main():
     '''
     #
     # Get the file and load it's spatial and temporal ground truth
-    loader = DashamDatasetLoader()
     file_name = loader.next()
-    return 0
+
     #
     # Use OpenCV to load frame sequence and video temporal charateristics
     framer = FrameGenerator(file_name)
