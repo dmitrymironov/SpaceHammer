@@ -43,7 +43,7 @@ def main():
         lat, lon = loader.kinetic_model.p(framer.pos_msec)
         V = loader.kinetic_model.speed(framer.pos_msec)
         A = loader.kinetic_model.angle(framer.pos_msec)
-        txt1 = "{:.6f} {:.6f}".format(lat, lon)
+        txt1 = "{:.5f} {:.5f}".format(lat, lon)
         txt2 = "{:3.2f} km/h   {:3.2f} deg".format(V, A)
         cv2.putText(img, txt1, (670, 1000), font,
                     fontScale, red, thickness, cv2.LINE_AA)

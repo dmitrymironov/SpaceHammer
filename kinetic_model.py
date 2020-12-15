@@ -19,6 +19,7 @@ class KineticModel:
     # Quick gradient approximation constant
     FEC = 285799889
     gps_speed = None
+    Vthreshold = 2  # km/h, ignore GPS noise
 
     #
     # Geodesial distance
@@ -63,7 +64,7 @@ class KineticModel:
         # that has derivative in any point we likely don't care that much
         # still averaging on a bigger vector gives less angles fluctuation
         step = 100  # 1/10th of a second
-        Twindow = 1000
+        Twindow = 500
         Nsteps = int(
             (self.T[-1].astype(int)+np.max([Twindow, step])-self.T[0].astype(int))/step)
         angle = np.zeros(Nsteps)
@@ -71,7 +72,8 @@ class KineticModel:
         for idx in range(Nsteps):
             T = self.T[0].astype(int)+step*idx
             T_angle_sampling[idx] = T
-            angle[idx] = self.bearing(T-Twindow, T, T+Twindow)
+            angle[idx] = int(self.speed(T)>self.Vthreshold) * \
+                self.bearing(T-Twindow, T, T+Twindow)
         self.interpolation['angle'] = I.splrep(T_angle_sampling, angle, s=0)
 
         # Lat/Lon show
@@ -105,7 +107,7 @@ class KineticModel:
             plt.show()
 
         # XML
-        if True:
+        if False:
             f = open('/home/dmi/Desktop/dbg.kml', 'w')
             f.write('''<?xml version="1.0" encoding="UTF-8"?>
                     <kml xmlns="http://www.opengis.net/kml/2.2">
@@ -149,7 +151,7 @@ class KineticModel:
             Plat, Plon = self.p(T)
             idx = int(T / step)
             d = self.dist(T, T+step)
-            print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
+            print("{:.5f}\t{:.5f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
                 Plat, Plon, d, self.speed(T), self.gps_speed[idx], self.angle(T), T
             ))
         #'''
@@ -168,7 +170,10 @@ class KineticModel:
 
     def speed(self, Tmsec):
         # use interpolated gps speed
-        return I.splev(Tmsec, self.interpolation['speed'], der=0)        
+        v=abs(I.splev(Tmsec, self.interpolation['speed'], der=0))
+        b=(v>self.Vthreshold).astype(int)
+        return v*b
+
         '''
         Looks like gps speed is calculated using accelerometer
 
@@ -190,4 +195,5 @@ class KineticModel:
             I.splev(Tmsec,self.interpolation['lon'],der=0)
 
     def angle(self, Tmsec):
-        return I.splev(Tmsec, self.interpolation['angle'], der=0)
+        b = (self.speed(Tmsec) > self.Vthreshold).astype(int)
+        return b*I.splev(Tmsec, self.interpolation['angle'], der=0)
