@@ -48,10 +48,12 @@ class KineticModel:
         self.T -= t0
         self.T *= 1000
 
+        self.interpolation = {}
+
         # Cross-refrerencing GPS speed vs recorded
         self.gps_speed = trajectory[:, 3]
+        self.interpolation['speed'] = I.splrep(self.T, self.gps_speed, s=0)
 
-        self.interpolation = {}
         self.interpolation['lat'] = I.splrep(self.T, lat, s=0)
         self.interpolation['lon'] = I.splrep(self.T, lon, s=0)
 
@@ -89,7 +91,7 @@ class KineticModel:
             yvals = I.splev(xvals, self.interpolation['lat'], der=0) - mlat
             axs[1].plot(xvals, yvals, '-x')
             # gps speed and interpolated speed
-            axs[2].plot(self.T, gps_speed, 'o')
+            axs[2].plot(self.T, self.gps_speed, 'o')
             axs[2].plot(self.T, self.speed(self.T), '-x')
             # 2D path
             axs[3].plot(lat, lon, '-o')
@@ -148,7 +150,7 @@ class KineticModel:
             idx = int(T / step)
             d = self.dist(T, T+step)
             print("{:.6f}\t{:.6f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
-                Plat, Plon, d, self.speed(T), gps_speed[idx], self.angle(T), T
+                Plat, Plon, d, self.speed(T), self.gps_speed[idx], self.angle(T), T
             ))
         #'''
 
@@ -165,9 +167,15 @@ class KineticModel:
         return np.rad2deg(np.arctan2(det, dot))
 
     def speed(self, Tmsec):
+        # use interpolated gps speed
+        return I.splev(Tmsec, self.interpolation['speed'], der=0)        
+        '''
+        Looks like gps speed is calculated using accelerometer
+
         dlat = self.FEC * I.splev(Tmsec, self.interpolation['lat'], der=1)
         dlon = self.FEC * I.splev(Tmsec, self.interpolation['lon'], der=1)
         return np.sqrt(dlat**2+dlon**2)
+        '''
 
     # distance between two moments (msec)
     def dist(self, t1, t2):
