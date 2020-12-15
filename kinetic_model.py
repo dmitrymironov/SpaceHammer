@@ -1,4 +1,5 @@
-from numpy.polynomial import Polynomial as P
+#from numpy.polynomial import Polynomial as P
+from scipy import interpolate as I
 import numpy as np
 
 #
@@ -15,6 +16,7 @@ class KineticModel:
     R = 6372800  # Earth radius
     # interpolated polynomial coefficients
     interpolation = []
+    FEC = 285799889
 
     #
     # Geodesial distance
@@ -47,13 +49,9 @@ class KineticModel:
         # Cross-refrerencing GPS speed vs recorded
         gps_speed = trajectory[:, 3]
 
-        # Polynomial degree 10 is a severe overfitting but works well
-        FEC = 285799889
         self.interpolation = {}
-        self.interpolation['lat'] = P.fit(self.T, lat, 10)
-        self.interpolation['lon'] = P.fit(self.T, lon, 10)
-        self.interpolation['dlat'] = FEC*self.interpolation['lat'].deriv()
-        self.interpolation['dlon'] = FEC*self.interpolation['lon'].deriv()
+        self.interpolation['lat'] = I.splrep(self.T, lat, s=0)
+        self.interpolation['lon'] = I.splrep(self.T, lon, s=0)
 
         # Sample dy/dx aka trajectory rotation angle with descrete step
         # significant enough to exceed averge GPS noise.
@@ -61,7 +59,7 @@ class KineticModel:
         # that has derivative in any point we likely don't care that much
         # still averaging on a bigger vector gives less angles fluctuation
         step = 100  # 1/10th of a second
-        Twindow = 200
+        Twindow = 1000
         Nsteps = int(
             (self.T[-1].astype(int)+np.max([Twindow, step])-self.T[0].astype(int))/step)
         angle = np.zeros(Nsteps)
@@ -70,7 +68,7 @@ class KineticModel:
             T = self.T[0].astype(int)+step*idx
             T_angle_sampling[idx] = T
             angle[idx] = self.bearing(T-Twindow, T, T+Twindow)
-        self.interpolation['angle'] = P.fit(T_angle_sampling, angle, 10)
+        self.interpolation['angle'] = I.splrep(T_angle_sampling, angle, s=0)
 
         # Lat/Lon show
         if True:
@@ -81,12 +79,12 @@ class KineticModel:
             mlon = np.min(lon)
             Jlon = lon - mlon
             axs[0].plot(self.T, Jlon, 'o')
-            yvals = self.interpolation['lon'](xvals) - mlon
+            yvals = I.splev(xvals,self.interpolation['lon'],der=0) - mlon
             axs[0].plot(xvals, yvals, '-x')
             mlat = np.min(lat)
             Jlat = lat - mlat
             axs[1].plot(self.T, Jlat, 'o')
-            yvals = self.interpolation['lat'](xvals) - mlat
+            yvals = I.splev(xvals, self.interpolation['lat'], der=0) - mlat
             axs[1].plot(xvals, yvals, '-x')
             # 2D path
             axs[2].plot(lat, lon, '-o')
@@ -94,7 +92,7 @@ class KineticModel:
             axs[2].plot(x, y, '-x')
             # Angle plot
             plt.plot(T_angle_sampling, angle, 'o')
-            yvals = self.interpolation['angle'](xvals)
+            yvals = I.splev(xvals,self.interpolation['angle'],der=0)
             axs[3].plot(xvals, yvals, '-x')
             # showtime
             plt.show()
@@ -162,8 +160,8 @@ class KineticModel:
         return np.rad2deg(np.arctan2(det, dot))
 
     def speed(self, Tmsec):
-        dlat = self.interpolation['dlat'](Tmsec)
-        dlon = self.interpolation['dlon'](Tmsec)
+        dlat = self.FEC * I.splev(Tmsec, self.interpolation['lat'], der=1)
+        dlon = self.FEC * I.splev(Tmsec, self.interpolation['lon'], der=1)
         return np.sqrt(dlat**2+dlon**2)
 
     # distance between two moments (msec)
@@ -174,8 +172,9 @@ class KineticModel:
 
     # interpolated smooth coordinate at time point
     def p(self, Tmsec):
-        return self.interpolation['lat'](Tmsec), \
-            self.interpolation['lon'](Tmsec)
+        return \
+            I.splev(Tmsec, self.interpolation['lat'], der=0), \
+            I.splev(Tmsec,self.interpolation['lon'],der=0)
 
     def angle(self, Tmsec):
-        return self.interpolation['angle'](Tmsec)
+        return I.splev(Tmsec, self.interpolation['angle'], der=0)
