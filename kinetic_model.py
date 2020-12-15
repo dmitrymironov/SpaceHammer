@@ -64,7 +64,7 @@ class KineticModel:
         # that has derivative in any point we likely don't care that much
         # still averaging on a bigger vector gives less angles fluctuation
         step = 100  # 1/10th of a second
-        Twindow = 500
+        Twindow = 100
         Nsteps = int(
             (self.T[-1].astype(int)+np.max([Twindow, step])-self.T[0].astype(int))/step)
         angle = np.zeros(Nsteps)
@@ -101,7 +101,7 @@ class KineticModel:
             axs[3].plot(x, y, '-x')
             # Angle plot
             plt.plot(T_angle_sampling, angle, 'o')
-            yvals = I.splev(xvals,self.interpolation['angle'],der=0)
+            yvals = self.angle(xvals)
             axs[4].plot(xvals, yvals, '-x')
             # showtime
             plt.show()
