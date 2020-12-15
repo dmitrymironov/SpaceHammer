@@ -16,7 +16,9 @@ class KineticModel:
     R = 6372800  # Earth radius
     # interpolated polynomial coefficients
     interpolation = []
+    # Quick gradient approximation constant
     FEC = 285799889
+    gps_speed = None
 
     #
     # Geodesial distance
@@ -47,7 +49,7 @@ class KineticModel:
         self.T *= 1000
 
         # Cross-refrerencing GPS speed vs recorded
-        gps_speed = trajectory[:, 3]
+        self.gps_speed = trajectory[:, 3]
 
         self.interpolation = {}
         self.interpolation['lat'] = I.splrep(self.T, lat, s=0)
@@ -74,7 +76,7 @@ class KineticModel:
         if True:
             import matplotlib.pyplot as plt
             xvals = np.linspace(0, 58000, 100)
-            fig, axs = plt.subplots(4)
+            fig, axs = plt.subplots(5)
             fig.suptitle('Booblik')
             mlon = np.min(lon)
             Jlon = lon - mlon
@@ -86,14 +88,17 @@ class KineticModel:
             axs[1].plot(self.T, Jlat, 'o')
             yvals = I.splev(xvals, self.interpolation['lat'], der=0) - mlat
             axs[1].plot(xvals, yvals, '-x')
+            # gps speed and interpolated speed
+            axs[2].plot(self.T, gps_speed, 'o')
+            axs[2].plot(self.T, self.speed(self.T), '-x')
             # 2D path
-            axs[2].plot(lat, lon, '-o')
+            axs[3].plot(lat, lon, '-o')
             x, y = self.p(xvals)
-            axs[2].plot(x, y, '-x')
+            axs[3].plot(x, y, '-x')
             # Angle plot
             plt.plot(T_angle_sampling, angle, 'o')
             yvals = I.splev(xvals,self.interpolation['angle'],der=0)
-            axs[3].plot(xvals, yvals, '-x')
+            axs[4].plot(xvals, yvals, '-x')
             # showtime
             plt.show()
 
