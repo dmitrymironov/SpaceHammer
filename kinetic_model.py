@@ -189,5 +189,4 @@ class KineticModel:
     def angle(self, Tmsec):
         a = I.splev(Tmsec, self.interpolation['angle'], der=0)
         b = (self.speed(Tmsec) > self.Vthreshold).astype(int)
-        c = (abs(a) > 3).astype(int)
-        return a*b*c
+        return np.where( abs(a) < 3, 0, a * b)
