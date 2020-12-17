@@ -19,7 +19,7 @@ class KineticModel:
     # Quick gradient approximation constant
     FEC = 285799889
     gps_speed = None
-    Vthreshold = 2  # km/h, ignore GPS noise
+    Vthreshold = 2.5  # km/h, ignore GPS noise
 
     #
     # Geodesial distance
@@ -58,23 +58,15 @@ class KineticModel:
         self.interpolation['lat'] = I.splrep(self.T, lat, s=0)
         self.interpolation['lon'] = I.splrep(self.T, lon, s=0)
 
-        # Sample dy/dx aka trajectory rotation angle with descrete step
-        # significant enough to exceed averge GPS noise.
-        # Considering it's done on a high-degree smoothing polinomial
-        # that has derivative in any point we likely don't care that much
-        # still averaging on a bigger vector gives less angles fluctuation
-        step = 100  # 1/10th of a second
-        Twindow = 100
-        Nsteps = int(
-            (self.T[-1].astype(int)+np.max([Twindow, step])-self.T[0].astype(int))/step)
-        angle = np.zeros(Nsteps)
-        T_angle_sampling = np.zeros(Nsteps)
-        for idx in range(Nsteps):
-            T = self.T[0].astype(int)+step*idx
-            T_angle_sampling[idx] = T
-            angle[idx] = int(self.speed(T)>self.Vthreshold) * \
-                self.bearing(T-Twindow, T, T+Twindow)
-        self.interpolation['angle'] = I.splrep(T_angle_sampling, angle, s=0)
+        angle = np.zeros(self.T.shape)
+        stepMs=1000
+        Tmin = int(min(self.T)+stepMs)
+        Tmax = int(max(self.T))
+        R = range(Tmin,Tmax, stepMs)
+        for t in R:
+            idx = int(t/stepMs)
+            angle[idx] = self.bearing(t-stepMs, t, t+stepMs)
+        self.interpolation['angle'] = I.splrep(self.T, angle, s=0)
 
         # Lat/Lon show
         if True:
@@ -100,10 +92,9 @@ class KineticModel:
             x, y = self.p(xvals)
             axs[3].plot(x, y, '-x')
             # Angle plot
-            plt.plot(T_angle_sampling, angle, 'o')
             yvals = self.angle(xvals)
-            axs[4].plot(xvals, yvals, '-x')
-            # showtime
+            axs[4].plot(xvals, yvals, 'o')
+         # showtime
             plt.show()
 
         # XML
@@ -145,13 +136,13 @@ class KineticModel:
 
         # MSE print((np.square(gps_speed - self.speed(self.T))).mean())
         #'''
-        print("lat      \tlon      \tdist\tspeed\tVgps\tangle\tT")
+        print("lat,lon      \tdist\tspeed\tVgps\tangle\tT")
         step = 1000
         for T in range(self.T[0].astype(int), step+self.T[-1].astype(int), step):
             Plat, Plon = self.p(T)
             idx = int(T / step)
             d = self.dist(T, T+step)
-            print("{:.5f}\t{:.5f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
+            print("{:.5f}, {:.5f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
                 Plat, Plon, d, self.speed(T), self.gps_speed[idx], self.angle(T), T
             ))
         #'''
@@ -160,10 +151,11 @@ class KineticModel:
         lat1, lon1 = self.p(t1)
         lat2, lon2 = self.p(t2)
         lat3, lon3 = self.p(t3)
-        x1 = lat2-lat1
-        y1 = lon2-lon1
-        x2 = lat3-lat2
-        y2 = lon3-lon2
+        prec=4
+        x1 = round(lat2-lat1,prec)
+        y1 = round(lon2-lon1,prec)
+        x2 = round(lat3-lat2,prec)
+        y2 = round(lon3-lon2,prec)
         dot = x1*x2+y1*y2
         det = x1*y2-y1*x2
         return np.rad2deg(np.arctan2(det, dot))
@@ -195,5 +187,7 @@ class KineticModel:
             I.splev(Tmsec,self.interpolation['lon'],der=0)
 
     def angle(self, Tmsec):
+        a = I.splev(Tmsec, self.interpolation['angle'], der=0)
         b = (self.speed(Tmsec) > self.Vthreshold).astype(int)
-        return b*I.splev(Tmsec, self.interpolation['angle'], der=0)
+        c = (abs(a) > 3).astype(int)
+        return a*b*c
