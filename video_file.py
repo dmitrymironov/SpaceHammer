@@ -22,7 +22,8 @@ def main():
     '''
     #
     # Get the file and load it's spatial and temporal ground truth
-    file_name = loader.next()
+    file_name, file_type = loader.next()
+    print("Loading '{}' file '{}'".format(file_type,file_name))
 
     #
     # Use OpenCV to load frame sequence and video temporal charateristics

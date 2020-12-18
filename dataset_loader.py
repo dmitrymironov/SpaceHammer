@@ -12,6 +12,8 @@ class DashamDatasetLoader:
     connection = None
     FPS = 0
     kinetic_model = None
+    file_type = None
+    num_frames = 0
 
     def next(self):
         cursor = self.connection.cursor()
@@ -19,13 +21,13 @@ class DashamDatasetLoader:
         # AND f.name LIKE "%6038%" AND d.path NOT LIKE '%Monument%'
         cursor.execute(
             '''
-            SELECT f.id,d.path || "/" || f.name 
-            FROM Files as f, Folders as d 
-            WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id
+            SELECT f.id,d.path || "/" || f.name, type, COUNT(l.id)
+            FROM Files as f, Folders as d,  Locations as l
+            WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id AND l.id=f.id
             LIMIT 1 
             '''
         )
-        id, file_name = cursor.fetchall()[0]
+        id, file_name, self.file_type, self.num_frames = cursor.fetchall()[0]
         # get lat,lon and speed curve
         cursor.execute(
             '''
