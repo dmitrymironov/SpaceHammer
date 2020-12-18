@@ -138,15 +138,16 @@ class KineticModel:
 
         # MSE print((np.square(gps_speed - self.speed(self.T))).mean())
         #'''
-        print("lat,lon      \tdist\tspeed\tVgps\tangle\tT")
-        step = 1000
-        for T in range(self.T[0].astype(int), step+self.T[-1].astype(int), step):
-            Plat, Plon = self.p(T)
-            idx = int(T / step)
-            d = self.dist(T, T+step)
-            print("{:.5f}, {:.5f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
-                Plat, Plon, d, self.speed(T), self.gps_speed[idx], self.angle(T), T
-            ))
+        if False:
+            print("lat,lon      \tdist\tspeed\tVgps\tangle\tT")
+            step = 1000
+            for T in range(self.T[0].astype(int), step+self.T[-1].astype(int), step):
+                Plat, Plon = self.p(T)
+                idx = int(T / step)
+                d = self.dist(T, T+step)
+                print("{:.5f}, {:.5f}\t{:.2f}\t{:.2f}\t{:.2f}\t{: .2f}\t{}".format(
+                    Plat, Plon, d, self.speed(T), self.gps_speed[idx], self.angle(T), T
+                ))
         #'''
 
     def bearing(self, t1, t2, t3):

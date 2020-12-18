@@ -37,8 +37,9 @@ class TrainingSetGenerator:
             # Downsize image
             assert img.shape == (1080,1920,3), "Unexpected garmin dimensions"
             # Crop to particular format (remove text)
-            img = self.crop(L.file_type,img)
-            out_image=cv2.resize(img,target_dim)
+            img = self.crop(L.file_type, img, target_dim)
+            # thats really weird but resize wants reversed HxW dimensions?
+            out_image = cv2.resize(img, (target_dim[1],target_dim[0]))
             # update channels for the position
             self.rgb_frames[Tidx][2], \
                 self.rgb_frames[Tidx][1], \
@@ -57,8 +58,19 @@ class TrainingSetGenerator:
     # Methods
     #
 
-    def crop(self, file_type, img):
+    def crop(self, file_type, img, target_dim):
         assert file_type == 'garmin', 'unsupported file type ' + file_type
         if file_type == 'garmin':
-            return img[273:-273,0:-50]
+            # target aspect ratio
+            ar = target_dim[0]/target_dim[1]
+            sz = img.shape
+            new_sz = [sz[0],sz[1]-50]
+            if new_sz[0]/new_sz[1] > ar:
+                # truncate width
+                new_sz[0]=int(new_sz[1]*ar)
+            else:
+                # turncate height
+                new_sz[1]=int(new_sz[0]/ar)
+            dw = [int((sz[0]-new_sz[0])/2), int((sz[1]-new_sz[1])/2)]
+            return img[dw[0]:sz[0]-dw[0],dw[1]:sz[1]-dw[1]]
         return img
