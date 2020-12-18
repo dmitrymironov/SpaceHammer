@@ -32,6 +32,8 @@ class FrameGenerator:
         return False, None
 
     '''
+    # compress debug gifs with
+    # gifsicle raw.gif -O3 --colors 128 -o g45.gif --scale .35 --no-conserve-memory
     def play(self, rate=1./30.):
         font = cv2.FONT_HERSHEY_SIMPLEX
         fontScale = 1

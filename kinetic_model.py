@@ -68,8 +68,9 @@ class KineticModel:
             angle[idx] = self.bearing(t-stepMs, t, t+stepMs)
         self.interpolation['angle'] = I.splrep(self.T, angle, s=0)
 
+        # TODO: debug plotting, remove
         # Lat/Lon show
-        if True:
+        if False:
             import matplotlib.pyplot as plt
             xvals = np.linspace(0, 58000, 100)
             fig, axs = plt.subplots(5)
@@ -97,6 +98,7 @@ class KineticModel:
          # showtime
             plt.show()
 
+        # TODO: debug dump, remove
         # XML
         if False:
             f = open('/home/dmi/Desktop/dbg.kml', 'w')
