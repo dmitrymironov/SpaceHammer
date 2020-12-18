@@ -22,7 +22,6 @@ class DashamDatasetLoader:
             SELECT f.id,d.path || "/" || f.name 
             FROM Files as f, Folders as d 
             WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id
-            AND f.name LIKE "%6038%" AND d.path NOT LIKE '%Monument%'
             LIMIT 1 
             '''
         )

@@ -7,9 +7,11 @@ import cv2
 class FrameGenerator:
     file_name = ''
     cap = None
-    frameCount = 0
+    frameCount = 0  
     pos_msec = 0
-
+    W = 0
+    H = 0
+    
     def __init__(self, fn):
         self.file_name = fn
         self.cap = cv2.VideoCapture(self.file_name)
