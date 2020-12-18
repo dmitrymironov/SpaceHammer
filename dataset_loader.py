@@ -21,13 +21,19 @@ class DashamDatasetLoader:
         # AND f.name LIKE "%6038%" AND d.path NOT LIKE '%Monument%'
         cursor.execute(
             '''
-            SELECT f.id,d.path || "/" || f.name, type, COUNT(l.id)
-            FROM Files as f, Folders as d,  Locations as l
-            WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id AND l.id=f.id
+            SELECT f.id,d.path || "/" || f.name, type
+            FROM Files as f, Folders as d
+            WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id
             LIMIT 1 
             '''
         )
-        id, file_name, self.file_type, self.num_frames = cursor.fetchall()[0]
+        id, file_name, self.file_type = cursor.fetchall()[0]
+        cursor.execute(
+            '''
+            SELECT COUNT(*) FROM Locations WHERE file_id=(?)
+            ''',(id,)
+            )
+        self.num_frames = cursor.fetchall()[0][0]
         # get lat,lon and speed curve
         cursor.execute(
             '''

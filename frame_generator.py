@@ -12,15 +12,15 @@ class FrameGenerator:
     W = 0
     H = 0
     
-    def __init__(self, fn):
+    def __init__(self, fn, file_type='garmin'):
         self.file_name = fn
         self.cap = cv2.VideoCapture(self.file_name)
         self.frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
-        print("Loaded '{}' {}x{} {}fps video".format(
-            fn, self.W, self.H, self.FPS))
+        print("Loaded '{}' {}x{} {}fps '{}' video".format(
+            fn, self.W, self.H, self.FPS, file_type))
 
     def __del__(self):
         del self.cap

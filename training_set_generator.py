@@ -18,15 +18,14 @@ class TrainingSetGenerator:
     # CTOR
     #
 
-    def __init__(self, fn, target_dim, type):
+    def __init__(self, target_dim=(640, 480), file_type='garmin'):
         L = dataset_loader.DashamDatasetLoader()
         file_name = L.next()
-        print("Loading '{}' file '{}'".format(L.file_type, file_name))
-        framer = frame_generator.FrameGenerator(file_name)
+        framer = frame_generator.FrameGenerator(file_name, L.file_type)
         self.time_points = np.zeros((L.num_frames,1))
         Nchannels=3 # B, G, R
         self.rgb_frames = np.zeros(
-            (self.time_points.shape[0], Nchannels, framer.W, framer.H))
+            (self.time_points.shape[0], Nchannels, target_dim[0], target_dim[1]))
         Tidx=0
         prevgray = None
         while True:
@@ -35,9 +34,10 @@ class TrainingSetGenerator:
                 break
             # update time
             self.time_points[Tidx]=framer.pos_msec
-            # Crop to particular format (remove text)
-            img = self.crop(img)
             # Downsize image
+            assert img.shape == (1080,1920,3), "Unexpected garmin dimensions"
+            # Crop to particular format (remove text)
+            img = self.crop(L.file_type,img)
             out_image=cv2.resize(img,target_dim)
             # update channels for the position
             self.rgb_frames[Tidx][2], \
@@ -60,6 +60,5 @@ class TrainingSetGenerator:
     def crop(self, file_type, img):
         assert file_type == 'garmin', 'unsupported file type ' + file_type
         if file_type == 'garmin':
-            margin = 100
-            return img[margin:-margin,margin:-margin]
+            return img[273:-273,0:-50]
         return img
