@@ -14,6 +14,8 @@ class TrainingSetGenerator:
     rgb_frames = None 
     # Optical flow vector field. Dimension: T, W, H, 2
     optical_flow = None
+    # Ground truth Y - speed and angle. Dimensions: T, V, A
+    y = None
 
     #
     # CTOR
@@ -29,8 +31,12 @@ class TrainingSetGenerator:
             (self.time_points.shape[0], Nchannels, target_dim[1], target_dim[0]))
         self.optical_flow = np.zeros(
             (self.time_points.shape[0], target_dim[1], target_dim[0], 2))
+        self.y = np.zeros(
+            (self.time_points.shape[0],2))
         Tidx = 0
         prevgray = None
+        # TODO: remove debug image showing when model works
+        dbg_disp = False
         for t in tqdm(range(self.time_points.shape[0])):
             ret, img = framer.next()
             if ret is not True:
@@ -43,7 +49,6 @@ class TrainingSetGenerator:
             img = self.crop(L.file_type, img, target_dim)
             # thats really weird but resize wants reversed HxW dimensions?
             out_image = cv2.resize(img, target_dim)
-            cv2.imshow('1', out_image)
             # update channels for the position
             self.rgb_frames[Tidx][2], \
                 self.rgb_frames[Tidx][1], \
@@ -51,18 +56,38 @@ class TrainingSetGenerator:
                         cv2.split(out_image) # b, g, r
             # set optical flow
             gray = cv2.cvtColor(out_image, cv2.COLOR_BGR2GRAY)
+            #cv2.imshow('1', gray)
             if prevgray is None:
                 prevgray=gray
             self.optical_flow[Tidx] = cv2.calcOpticalFlowFarneback(
                 prevgray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
             prevgray=gray
+            if dbg_disp:
+                cv2.imshow('flow', self.draw_flow(gray, self.optical_flow[Tidx]))
+            # Set ground truth       
+            self.y[Tidx][0] = L.kinetic_model.speed(framer.pos_msec)
+            self.y[Tidx][1] = L.kinetic_model.angle(framer.pos_msec)
             # increment time dimension
             Tidx += 1
-            ch = 0xFF & cv2.waitKey(1)
+            if dbg_disp:
+                ch = 0xFF & cv2.waitKey(1)
 
     #
     # Methods
     #
+
+
+    def draw_flow(self,img, flow, step=16):
+        h, w = img.shape[:2]
+        y, x = np.mgrid[step/2:h:step, step/2:w:step].reshape(2, -1).astype(int)
+        fx, fy = flow[y, x].T
+        lines = np.vstack([x, y, x+fx, y+fy]).T.reshape(-1, 2, 2)
+        lines = np.int32(lines + 0.5)
+        vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        cv2.polylines(vis, lines, 0, (0, 0, 255))
+        for (x1, y1), (x2, y2) in lines:
+            cv2.circle(vis, (x1, y1), 1, (0, 255, 0), -1)
+        return vis
 
     def crop(self, file_type, img, target_dim):
         assert file_type == 'garmin', 'unsupported file type ' + file_type
