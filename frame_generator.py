@@ -9,6 +9,7 @@ class FrameGenerator:
     cap = None
     frameCount = 0  
     pos_msec = 0
+    FPS = 0
     W = 0
     H = 0
     

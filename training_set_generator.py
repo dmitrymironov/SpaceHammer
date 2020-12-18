@@ -5,6 +5,7 @@ import cv2
 import kinetic_model
 import dataset_loader
 import frame_generator
+from tqdm import tqdm
 
 class TrainingSetGenerator:
     # Points in time, ms. Dimension: T
@@ -22,15 +23,15 @@ class TrainingSetGenerator:
         L = dataset_loader.DashamDatasetLoader()
         file_name = L.next()
         framer = frame_generator.FrameGenerator(file_name, L.file_type)
-        self.time_points = np.zeros((L.num_frames,1))
+        self.time_points = np.zeros((L.num_samples*framer.FPS,1))
         Nchannels=3 # B, G, R
         self.rgb_frames = np.zeros(
             (self.time_points.shape[0], Nchannels, target_dim[0], target_dim[1]))
         self.optical_flow = np.zeros(
-            (L.num_frames, target_dim[0], target_dim[1],2))
+            (self.time_points.shape[0], target_dim[0], target_dim[1], 2))
         Tidx = 0
         prevgray = None
-        while True:
+        for t in tqdm(range(self.time_points.shape[0])):
             ret, img = framer.next()
             if ret is not True:
                 break

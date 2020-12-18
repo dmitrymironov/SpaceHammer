@@ -10,10 +10,9 @@ import numpy as np
 class DashamDatasetLoader:
     db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     connection = None
-    FPS = 0
     kinetic_model = None
     file_type = None
-    num_frames = 0
+    num_samples = 0
 
     def next(self):
         cursor = self.connection.cursor()
@@ -33,7 +32,7 @@ class DashamDatasetLoader:
             SELECT COUNT(*) FROM Locations WHERE file_id=(?)
             ''',(id,)
             )
-        self.num_frames = cursor.fetchall()[0][0]
+        self.num_samples = cursor.fetchall()[0][0]
         # get lat,lon and speed curve
         cursor.execute(
             '''
