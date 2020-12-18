@@ -26,9 +26,9 @@ class TrainingSetGenerator:
         self.time_points = np.zeros((L.num_samples*framer.FPS,1))
         Nchannels=3 # B, G, R
         self.rgb_frames = np.zeros(
-            (self.time_points.shape[0], Nchannels, target_dim[0], target_dim[1]))
+            (self.time_points.shape[0], Nchannels, target_dim[1], target_dim[0]))
         self.optical_flow = np.zeros(
-            (self.time_points.shape[0], target_dim[0], target_dim[1], 2))
+            (self.time_points.shape[0], target_dim[1], target_dim[0], 2))
         Tidx = 0
         prevgray = None
         for t in tqdm(range(self.time_points.shape[0])):
@@ -41,9 +41,9 @@ class TrainingSetGenerator:
             assert img.shape == (1080,1920,3), "Unexpected garmin dimensions"
             # Crop to particular format (remove text)
             img = self.crop(L.file_type, img, target_dim)
-            cv2.imshow('1',img)
             # thats really weird but resize wants reversed HxW dimensions?
-            out_image = cv2.resize(img, (target_dim[1],target_dim[0]))
+            out_image = cv2.resize(img, target_dim)
+            cv2.imshow('1', out_image)
             # update channels for the position
             self.rgb_frames[Tidx][2], \
                 self.rgb_frames[Tidx][1], \
