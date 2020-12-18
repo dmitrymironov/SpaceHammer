@@ -11,7 +11,7 @@ class TrainingSetGenerator:
     time_points = None
     # 3-channel frames. Dimension: T, Nchannel, W, H (Channels: R, G, B)
     rgb_frames = None 
-    # Optical flow vector field. Dimension: T, W, H
+    # Optical flow vector field. Dimension: T, W, H, 2
     optical_flow = None
 
     #
@@ -26,7 +26,9 @@ class TrainingSetGenerator:
         Nchannels=3 # B, G, R
         self.rgb_frames = np.zeros(
             (self.time_points.shape[0], Nchannels, target_dim[0], target_dim[1]))
-        Tidx=0
+        self.optical_flow = np.zeros(
+            (L.num_frames, target_dim[0], target_dim[1],2))
+        Tidx = 0
         prevgray = None
         while True:
             ret, img = framer.next()
@@ -47,7 +49,7 @@ class TrainingSetGenerator:
                         cv2.split(out_image) # b, g, r
             # set optical flow
             gray = cv2.cvtColor(out_image, cv2.COLOR_BGR2GRAY)
-            if prevgray == None:
+            if prevgray is None:
                 prevgray=gray
             self.optical_flow[Tidx] = cv2.calcOpticalFlowFarneback(
                 prevgray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
