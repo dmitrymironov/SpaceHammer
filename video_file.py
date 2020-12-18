@@ -36,23 +36,28 @@ def main():
     thickness = 2
     rate = 1.0
 
+    trainingMode = False
+
     while True:
         ret, img = framer.next()
         if ret is not True:
             break
-        lat, lon = loader.kinetic_model.p(framer.pos_msec)
+        # Y
         V = loader.kinetic_model.speed(framer.pos_msec)
         A = loader.kinetic_model.angle(framer.pos_msec)
-        txt1 = "{:.5f} {:.5f}".format(lat, lon)
-        txt2 = "{:3.2f} km/h   {:3.2f} deg".format(V, A)
-        cv2.putText(img, txt1, (670, 1000), font,
-                    fontScale, red, thickness, cv2.LINE_AA)
-        cv2.putText(img, txt2, (1070, 1030), font,
-                    fontScale, blue, thickness, cv2.LINE_AA)
-        cv2.imshow(framer.file_name, img)
-        # define q as the exit button
-        if cv2.waitKey(int(1000./(rate*framer.FPS))) & 0xFF == ord('q'):
-            break
+        # TODO: Debugging output to validate training input
+        if not trainingMode:
+            lat, lon = loader.kinetic_model.p(framer.pos_msec)
+            txt1 = "{:.5f} {:.5f}".format(lat, lon)
+            txt2 = "{:3.2f} km/h   {:3.2f} deg".format(V, A)
+            cv2.putText(img, txt1, (670, 1000), font,
+                        fontScale, red, thickness, cv2.LINE_AA)
+            cv2.putText(img, txt2, (1070, 1030), font,
+                        fontScale, blue, thickness, cv2.LINE_AA)
+            cv2.imshow(framer.file_name, img)
+            # define q as the exit button
+            if cv2.waitKey(int(1000./(rate*framer.FPS))) & 0xFF == ord('q'):
+                break
 
     del framer
 
