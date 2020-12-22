@@ -2,13 +2,17 @@ import os
 import sqlite3
 import kinetic_model
 import numpy as np
+import platform
 
 #
 # DashamDatasetLoader
 #
 
 class DashamDatasetLoader:
-    db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
+    if platform.system()=="Windows":
+        db = r'C:\\msys64\\home\\dmmie\\.dashcam.software\\dashcam.index'
+    else:
+        db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     connection = None
     kinetic_model = None
     file_type = None

@@ -54,7 +54,6 @@ class FlowNetS:
             leaky_relu_6,
         ])
 
-
 class PoseConvGRUNet(keras.Model):
     def __init__(self):
         super(PoseConvGRUNet, self).__init__()

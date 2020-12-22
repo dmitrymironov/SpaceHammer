@@ -45,6 +45,9 @@ class TrainingSetGenerator:
             self.time_points[Tidx]=framer.pos_msec
             # Downsize image
             assert img.shape == (1080,1920,3), "Unexpected garmin dimensions"
+            '''
+            # We should use tensorflow 
+            #-----------------------------------------------------------
             # Crop to particular format (remove text)
             img = self.crop(L.file_type, img, target_dim)
             # thats really weird but resize wants reversed HxW dimensions?
@@ -64,6 +67,8 @@ class TrainingSetGenerator:
             prevgray=gray
             if dbg_disp:
                 cv2.imshow('flow', self.draw_flow(gray, self.optical_flow[Tidx]))
+            #-----------------------------------------------------------
+            '''
             # Set ground truth       
             self.y[Tidx][0] = L.kinetic_model.speed(framer.pos_msec)
             self.y[Tidx][1] = L.kinetic_model.angle(framer.pos_msec)
