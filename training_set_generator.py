@@ -14,7 +14,7 @@ class TrainingSetGenerator:
     rgb_frames = None 
     # Optical flow vector field. Dimension: T, W, H, 2
     optical_flow = None
-    # Ground truth Y - speed and angle. Dimensions: T, V, A
+    # Ground truth Y - speed and angle. Dimensions: V
     y = None
 
     #
@@ -46,7 +46,7 @@ class TrainingSetGenerator:
             # Downsize image
             assert img.shape == (1080,1920,3), "Unexpected garmin dimensions"
             '''
-            # We should use tensorflow 
+            # We should use tensorflow and CUDA acceleration for LA
             #-----------------------------------------------------------
             # Crop to particular format (remove text)
             img = self.crop(L.file_type, img, target_dim)
@@ -71,7 +71,12 @@ class TrainingSetGenerator:
             '''
             # Set ground truth       
             self.y[Tidx][0] = L.kinetic_model.speed(framer.pos_msec)
-            self.y[Tidx][1] = L.kinetic_model.angle(framer.pos_msec)
+            if Tidx == 0:
+                continue
+            
+            inputs = tf.keras.Input(shape=(10, 128, 128, 3))
+
+            # self.y[Tidx][1] = L.kinetic_model.angle(framer.pos_msec)
             # increment time dimension
             Tidx += 1
             if dbg_disp:

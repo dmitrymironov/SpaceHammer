@@ -3,9 +3,12 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 
+# https://github.com/keras-team/keras/issues/5687
+
 class FlowNet(keras.Model):
-    def __init__(self):
-        super(FlowNet, self).__init__()
+    def __init__(self, height, width):
+        #super(FlowNet, self).__init__()
+        super().__init__()
 
         self.conv1 = layers.Conv2D(64, kernel_size=7, strides=2, padding='same', input_shape=(height, width, 6),
                               name='conv1')
@@ -43,7 +46,7 @@ class FlowNet(keras.Model):
                               padding='same', name='conv6')
         self.leaky_relu_6 = layers.LeakyReLU(0.1)
 
-    def call(self, inputs, is_training=False):
+    def call(self, inputs):
         x = self.conv1(inputs)
         x = self.leaky_relu_1(x)
         x = self.conv2(x)
@@ -66,7 +69,8 @@ class FlowNet(keras.Model):
 
 class PoseConvGRUNet(keras.Model):
     def __init__(self):
-        super(PoseConvGRUNet, self).__init__()
+        #super(PoseConvGRUNet, self).__init__()
+        super().__init__()
         self.max_pooling = layers.MaxPool2D(2, strides=2)
         self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
         self.gru = layers.GRU(3)
@@ -78,7 +82,7 @@ class PoseConvGRUNet(keras.Model):
         self.leaky_relu_3 = layers.LeakyReLU(0.1)
         self.out = layers.Dense(6)
 
-    def call(self, inputs, is_training=False):
+    def call(self, inputs):
         x = self.max_pooling(inputs)
         x = self.reshape(x)
         x = self.gru(x)
