@@ -16,6 +16,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     num_samples = 0
     Nff = 1800 # Frames per file. On our dataset it's constant
     file_ids = []
+    current_file_id = None
     '''
     Use file or track id to load data sequence
     '''
@@ -40,7 +41,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
 
         return 0
 
-    def preload_track(self, track_id):
+    def preload_track(self, track_id: int):
         cursor = self.connection.cursor()
         cursor.execute(
             '''
@@ -60,6 +61,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         )
         self.file_ids = cursor.fetchall()
         self.num_samples = len(self.file_ids)*self.Nff
+        self.buffer_file(self.file_ids[0][0])
 
     def preload_file(self, file_id):
         cursor = self.connection.cursor()
@@ -80,6 +82,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         )
         self.num_samples = self.Nff*1
         file_ids=[file_id]
+        self.buffer_file(file_id)
 
     def load_speed_labels(self,d):
         t_v=np.array(d)
@@ -100,13 +103,13 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.connection.enable_load_extension(True)
         self.connection.cursor().execute("SELECT load_extension('mod_spatialite')")
 
-    def speed(self, Tmsec):
+    def speed(self, Tmsec: int):
         # use interpolated gps speed
         v = abs(I.splev(Tmsec, self.Vinterpoated, der=0))
         b = (v > self.Vthreshold).astype(int)
         return v*b
 
-    def file_name(self,file_id):
+    def file_name(self,file_id: int):
         cursor = self.connection.cursor()
         cursor.execute(
             '''
@@ -117,7 +120,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         )
         return cursor.fetchall()[0]
 
-    def buffer_file(self,file_id):
+    def buffer_file(self,file_id: int):
         fn = self.file_name(file_id)
         cap = cv2.VideoCapture(self.file_name)
         frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -135,6 +138,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             #assert img.shape == (1080, 1920, 3), "Unexpected garmin dimensions"
             #self.pos_msec = int(cap.get(cv2.CAP_PROP_POS_MSEC))
         self.images = tf.convert_to_tensor(images)
+        self.current_file_id = file_id
     # dtor
     def __del__(self):
         self.connection.close()
