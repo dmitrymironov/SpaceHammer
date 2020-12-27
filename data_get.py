@@ -1,6 +1,8 @@
-import tf.keras.utils.Sequence as Sequence
+import tensorflow as tf
+import tensorflow.keras.utils
 import sqlite3, os
 import numpy as np
+from scipy import interpolate as I
 
 '''
 Create inputs and targets from videos and geo-tagged video sequence
@@ -8,25 +10,27 @@ Inputs is a set of sliding windows prepared for convolution as in PoseConvGRU
 Targets are speed regression values
 '''
 
-class tfFrameGen(Sequence):
+class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     connection = None
     Vthreshold = 0.5  # km/h, ignore GPS noise
-
+    num_samples = 0
+    Nff = 1800 # Frames per file. On our dataset it's constant
+    file_ids = []
     '''
     Use file or track id to load data sequence
     '''
-    def __init__(self, fn_idx, track=None, fn=None):
+    def __init__(self, fn_idx, track_id=None, file_id=None):
         self.batch_size = 32
         self.index_file = fn_idx
         self.db_open(fn_idx)
         # load ground truth data from the db
-        if track is not None:
-            self.load_track(track)
+        if track_id is not None:
+            self.preload_track(track_id)
         else:
-            self.load_file(fn)
+            self.preload_file(file_id)
 
     def __len__(self):
-        return 0
+        return self.num_samples
 
     def __getitem__(self, idx):
         batch_x = self.x[idx * self.batch_size:(idx + 1) *
@@ -36,7 +40,7 @@ class tfFrameGen(Sequence):
 
         return 0
 
-    def load_track(self, track_id):
+    def preload_track(self, track_id):
         cursor = self.connection.cursor()
         cursor.execute(
             '''
@@ -48,19 +52,34 @@ class tfFrameGen(Sequence):
             (track_id,)
         )
         self.load_speed_labels(cursor.fetchall())
+        cursor.execute(
+            '''
+            SELECT DISTINCT(file_id) FROM Locations WHERE track_id=(?) 
+            ORDER BY timestamp
+            ''', (track_id,)
+        )
+        self.file_ids = cursor.fetchall()
+        self.num_samples = len(self.file_ids)*self.Nff
 
-    def load_file(self, file_id):
+    def preload_file(self, file_id):
         cursor = self.connection.cursor()
         cursor.execute(
             '''
             SELECT timestamp/1000,CAST(speed AS real)
             FROM Locations 
-            WHERE file_id=(?)
+            WHERE file_id=(?) AND type='garmin'
             ORDER BY timestamp
             ''',
             (file_id,)
         )        
         self.load_speed_labels(cursor.fetchall())
+        cursor.execute(
+            '''
+            SELECT COUNT(*) FROM Locations WHERE file_id=(?)
+            ''', (file_id,)
+        )
+        self.num_samples = self.Nff*1
+        file_ids=[file_id]
 
     def load_speed_labels(self,d):
         t_v=np.array(d)
@@ -87,6 +106,35 @@ class tfFrameGen(Sequence):
         b = (v > self.Vthreshold).astype(int)
         return v*b
 
+    def file_name(self,file_id):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            '''
+            SELECT d.path || "/" || f.name
+            FROM Files as f, Folders as d
+            WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id AND f.id=(?)
+            ''', (file_id,)
+        )
+        return cursor.fetchall()[0]
+
+    def buffer_file(self,file_id):
+        fn = self.file_name(file_id)
+        cap = cv2.VideoCapture(self.file_name)
+        frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
+        print("Loaded '{}' {}x{} {}fps, {} frames".format(
+            fn, W, H, FPS, frameCount))
+        # we'll save images in numpy array and let tensorflow do 
+        # all the heavy lifting with image transofrmation later
+        images = np.zeros((Nff,1080,1920,3))
+        for idx in range(Nff):
+            ret, images[idx] = cap.read()
+            assert ret, "Broken video '{}'".format(file_id)
+            #assert img.shape == (1080, 1920, 3), "Unexpected garmin dimensions"
+            #self.pos_msec = int(cap.get(cv2.CAP_PROP_POS_MSEC))
+        self.images = tf.convert_to_tensor(images)
     # dtor
     def __del__(self):
         self.connection.close()

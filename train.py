@@ -1,9 +1,19 @@
-import training_set_generator
+#import training_set_generator
 import os
+import data_get
+import tensorflow as tf
+import platform
+import numpy as np
 
 def main():
-    # os.system('clear')  # clear the terminal on linux
-    train1 = training_set_generator.TrainingSetGenerator()
+    os.system('clear')  # clear the terminal on linux
+    print("Using Tensorflow {}".format(tf.__version__))
+    # train1 = training_set_generator.TrainingSetGenerator()
+    if platform.system() == "Windows":
+        db = r'C:\\msys64\\home\\dmmie\\.dashcam.software\\dashcam.index'
+    else:
+        db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
+    ggen = data_get.tfGarminFrameGen(db,1)
 
 if __name__ == "__main__":
     main()

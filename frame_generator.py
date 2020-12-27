@@ -17,12 +17,12 @@ class FrameGenerator:
         self.file_name = fn
         self.cap = cv2.VideoCapture(self.file_name)
         # self.frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.frameCount = int(self.cap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
+        self.frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
-        print("Loaded '{}' {}x{} {}fps '{}' video".format(
-            fn, self.W, self.H, self.FPS, file_type))
+        print("Loaded '{}' {}x{} {}fps '{}' video, {} frames".format(
+            fn, self.W, self.H, self.FPS, file_type, self.frameCount))
 
     def __del__(self):
         del self.cap
