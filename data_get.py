@@ -98,7 +98,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
         print("Loading '{}' {}x{} {}fps, {} frames".format(
-            fn, self. W, self.H, self.FPS, self.Nff))
+            self.fn, self. W, self.H, self.FPS, self.Nff))
 
     '''
     Get next frame in the sequence
@@ -112,7 +112,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         # set to a proper frame
         if self.cap.get(cv2.CV_CAP_PROP_POS_FRAMES) != frame_idx:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        ret, img = cap.read()
+        ret, img = self.cap.read()
         assert ret, "Broken video '{}'".format(self.fn)
         return self.garmin_crop(img)
 
@@ -127,30 +127,44 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     def move_on(self):
         if self.current_file_pos+1 >= self.Nff:
             # trigger switching to a next file
-            self.file_cnt = self.file_cnt+1
-            self.current_file_id = -1
+            self.file_ids_pos = self.file_ids_pos+1
+            if self.file_ids_pos>=len(self.file_ids):
+                # it's a last file, we need to stop
+                self.current_file_id = -2
+                self.current_file_pos = -2
+                return False
+            else:
+                self.select_file(self.file_ids[self.file_ids_pos])
         else:
             self.current_file_pos = self.current_file_pos+1
+        return True
     '''
     Get batch_x and batch_y for training (generator method)
     '''
     def __getitem__(self, batch_idx: int):
         frame1 = None
         frame2 = None
-        file_id = int(batch_idx*self.batch_size/self.Nff)
-        self.select_file(self.file_ids[file_id])
+        self.file_ids_pos = int(batch_idx*self.batch_size/self.Nff)
+        self.select_file(self.file_ids[self.file_ids_pos])
         self.current_file_pos=int(batch_idx*self.batch_size)%self.Nff
+        fEndReached=False
         for batch_pos in range(self.batch_size):
             if frame2 is None:
                 frame1 = self.get_frame(self.current_file_pos)
             else:
                 frame1 = frame2
-            self.move_on()
-            frame2 = self.get_frame(self.current_file_pos)
-            # channels concatenate
-            self.batch_x[batch_pos]=np.concatenate(frame1,frame2,axis=2)
-            Tframe = (batch_idx*self.batch_size+batch_pos)*1000
-            self.batch_y[batch_pos] = self.speed(Tframe)
+            if self.move_on(): 
+                frame2 = self.get_frame(self.current_file_pos)
+                # channels concatenate
+                self.batch_x[batch_pos]=np.concatenate(frame1,frame2,axis=2)
+                Tframe = (batch_idx*self.batch_size+batch_pos)*1000
+                self.batch_y[batch_pos] = self.speed(Tframe)
+            else:
+                # We've reached the end, just repeating the last frame
+                assert fEndReached, "We should not stack more than one end frame"
+                self.batch_x[batch_pos] = np.concatenate(frame1, frame1, axis=2)
+                self.batch_y[batch_pos] = self.speed(Tframe)
+                fEndReached=True
         return self.batch_x, self.batch_y
 
     '''
