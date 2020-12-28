@@ -23,11 +23,12 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     cap = None # opencv video handler
     batch_x = None # batch_x - batches RAM placeholders
     batch_y = None # batch_y 
+    train_image_dim = (640, 480)
 
     Htxt = 50 # Garmin text cropping line height
     Wframe = 1080 # Garmin frame WxH
     Hframe = 1920
-    CHframe = 6 # Num channels per X
+    CHframe = 3 # Num channels per X
 
     '''
                         INITIALIZE (generator method)
@@ -37,7 +38,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.batch_size = 30
         assert self.Nff % self.batch_size == 0, "Batch size is not divisible"
         self.batch_x = np.zeros((self.batch_size, \
-            self.Wframe, self.Hframe-self.Htxt, \
+            self.train_image_dim[1], self.train_image_dim[0],
                 self.CHframe))
         self.batch_y = np.zeros((self.batch_size))
         self.index_file = fn_idx
@@ -75,7 +76,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             # turncate width
             new_sz[1] = int(new_sz[0]*ar)
             dw = [self.Htxt, int((sz[1]-new_sz[1])/2)]
-        return img[0:sz[0]-dw[0], 0:sz[1]-dw[1]]
+        return cv2.resize(img[0:sz[0]-dw[0], 0:sz[1]-dw[1]],target_dim)
 
     '''
     position to a particular file
@@ -114,7 +115,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = self.cap.read()
         assert ret, "Broken video '{}'".format(self.fn)
-        return self.garmin_crop(img)
+        return self.garmin_crop(img,self.train_image_dim)
 
     '''
     Get current file_idx and frame idx
@@ -156,7 +157,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             if self.move_on(): 
                 frame2 = self.get_frame(self.current_file_pos)
                 # channels concatenate
-                self.batch_x[batch_pos]=np.concatenate(frame1,frame2,axis=2)
+                self.batch_x[batch_pos]=np.concatenate((frame1,frame2),axis=2)
                 Tframe = (batch_idx*self.batch_size+batch_pos)*1000
                 self.batch_y[batch_pos] = self.speed(Tframe)
             else:
