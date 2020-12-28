@@ -98,7 +98,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.fn = self.file_name(self.current_file_id)
         self.cap = cv2.VideoCapture(self.fn)
         frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        assert frameCount==self.Nff, "Unexpected frame count"
+        assert frameCount >= self.Nff, "Unexpected frame count {}".format(
+            frameCount)
         self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
@@ -120,10 +121,10 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         if actual_pos != frame_idx:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = self.cap.read()
-        '''
+        #'''
         #debug
         cv2.imshow("debug1", img)
-        '''
+        #'''
         assert ret, "Broken video '{}'".format(self.fn)
         return self.garmin_crop(img,self.train_image_dim)
 
@@ -183,7 +184,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
                 fEndReached=True
 
-            '''
+            #'''
             # debug                    
             test1 = self.batch_x[batch_pos, :, :, 0:3]
             assert np.array_equal(frame1,test1), "Incorrect concatenation"
@@ -195,7 +196,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 "{:.2f} km/h {}".format(self.batch_y[batch_pos], Ts))
             cv2.imshow("debug", img)
             cv2.waitKey(1)
-            '''
+            #'''
         return self.batch_x, self.batch_y
 
     '''
@@ -235,7 +236,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             '''
             SELECT timestamp/1000,CAST(speed AS real)
             FROM Locations 
-            WHERE file_id=(?) AND type='garmin'
+            WHERE file_id=(?)
             ORDER BY timestamp
             ''',
             (file_id,)
@@ -246,7 +247,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             SELECT COUNT(*) FROM Locations WHERE file_id=(?)
             ''', (file_id,)
         )
-        self.file_ids=[file_id]
+        self.file_ids=[(file_id,)]
 
     #
     def load_speed_labels(self,d):
@@ -295,6 +296,15 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             '''.format(file_id)
             )
         return os.path.normpath(self.cursor.fetchall()[0][0])
+
+    def get_file_id_by_pattern(self,pat):
+        self.cursor.execute(
+            '''
+            SELECT f.id,  d.path || "/" || f.name as p FROM Files as f, Folders as d 
+            WHERE d.path || "/" || f.name LIKE '{}'
+            '''.format(pat)
+        )
+        return self.cursor.fetchall()[0]
 
     # dtor
     def __del__(self):
