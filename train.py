@@ -4,6 +4,9 @@ import data_get
 import tensorflow as tf
 import platform
 import numpy as np
+from keras.models import Sequential
+from tensorflow.keras import layers
+import models
 
 def main():
     os.system('clear')  # clear the terminal on linux
@@ -15,8 +18,9 @@ def main():
         db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     db = os.path.normpath(db)
     
-    # debug run for the generator
-    # 9 is the shortest track
+    '''
+    Generators
+    '''
     train_gen = data_get.tfGarminFrameGen(db, track_id=1)
     validation_gen = data_get.tfGarminFrameGen(db,file_id=5)
     '''
@@ -27,10 +31,41 @@ def main():
     return 
     '''
 
+    '''
     # memory leak test loop
     for iter in range(20):
         for batch_idx in range(validation_gen.__len__()):
             x, y = validation_gen.__getitem__(batch_idx)
+    '''
+
+    '''
+    Model
+    '''
+    topModel = Sequential(
+        [
+        models.FlowNet(height=train_gen.Hframe,width=train_gen.Wframe),
+        models.PoseConvGRUNet()
+        ]
+    )
+
+
+    model = Sequential(
+        [
+            layers.TimeDistributed(topModel())
+        ]
+    )
+
+    model.compile()
+
+    '''
+    Train
+    '''
+    model.fit_generator(
+        generator=training_gen,
+        validation_data=validation_gen,
+        use_multiprocessing=True,
+        workers=4
+        ) 
 
     print("Done!")
 
