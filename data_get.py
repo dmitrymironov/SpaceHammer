@@ -1,6 +1,6 @@
 import tensorflow as tf
 import tensorflow.keras.utils
-import sqlite3, os, cv2
+import sqlite3, os, cv2, datetime
 import numpy as np
 from scipy import interpolate as I
 
@@ -25,6 +25,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     cap = None # opencv video handler
     batch_x = None # batch_x - batches RAM placeholders
     batch_y = None # batch_y 
+    t0 = -1 # beginning of the track, epoch
     train_image_dim = (640, 480)
 
     Htxt = 50 # Garmin text cropping line height
@@ -41,7 +42,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         assert self.Nff % self.batch_size == 0, "Batch size is not divisible"
         self.batch_x = np.zeros((self.batch_size, \
             self.train_image_dim[1], self.train_image_dim[0],
-                self.CHframe*2))
+                self.CHframe*2),dtype='uint8')
         self.batch_y = np.zeros((self.batch_size))
         self.index_file = fn_idx
         self.db_open(fn_idx)
@@ -113,9 +114,11 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         '''
         assert frame_idx >= 0 & frame_idx <= self.Nff, "Illegal frame idx"
         # set to a proper frame
-        if self.cap.get(cv2.CAP_PROP_POS_FRAMES) != frame_idx:
+        actual_pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        if actual_pos != frame_idx:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = self.cap.read()
+        cv2.imshow("debug1", img)
         assert ret, "Broken video '{}'".format(self.fn)
         return self.garmin_crop(img,self.train_image_dim)
 
@@ -151,6 +154,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.select_file(self.file_ids[self.file_ids_pos][0])
         self.current_file_pos=int(batch_idx*self.batch_size)%self.Nff
         fEndReached=False
+        test1=None
         for batch_pos in range(self.batch_size):
             if frame2 is None:
                 frame1 = self.get_frame(self.current_file_pos)
@@ -159,16 +163,38 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             if self.move_on(): 
                 frame2 = self.get_frame(self.current_file_pos)
                 # channels concatenate
-                self.batch_x[batch_pos]=np.concatenate((frame1,frame2),axis=2)
-                Tframe = (batch_idx*self.batch_size+batch_pos)*1000
+                self.batch_x[batch_pos] = tf.concat([frame1, frame2], axis=2)
+                # Garmin overlaps frames in different videos, that leads
+                # to accumulation of time ahead diff
+                # --- Tframe = int((batch_idx*self.batch_size+batch_pos)*1000./self.FPS)
                 self.batch_y[batch_pos] = self.speed(Tframe)
             else:
                 # We've reached the end, just repeating the last frame
                 assert fEndReached, "We should not stack more than one end frame"
-                self.batch_x[batch_pos] = np.concatenate(frame1, frame1, axis=2)
+                self.batch_x[batch_pos] = tf.concat([frame1, frame1], axis=2)
                 self.batch_y[batch_pos] = self.speed(Tframe)
                 fEndReached=True
+                    
+            test1 = self.batch_x[batch_pos, :, :, 0:3]
+            assert np.array_equal(frame1,test1), "Incorrect concatenation"
+            fmt = '%m/%d/%Y %H:%M:%S'
+            t = datetime.datetime.fromtimestamp((self.t0+Tframe)/1000.)
+            # t_utc = datetime.datetime.utcfromtimestamp(float(s)/1000.)
+            Ts = t.strftime(fmt)
+            img = self.put_text(frame1,
+                "{:.2f} km/h {}".format(self.batch_y[batch_pos], Ts))
+            cv2.imshow("debug", img)
+            cv2.waitKey(1)
         return self.batch_x, self.batch_y
+
+    '''
+    Add text to opencv image for debug
+    '''
+    def put_text(self,img,txt,clr=(0,0,255),pos=(10,50),thick=2):
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fontScale = 1
+        cv2.putText(img, txt, pos, font, fontScale, clr, thick, cv2.LINE_AA)
+        return img
 
     '''
     Database operations to provide ground truth
@@ -215,10 +241,17 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     def load_speed_labels(self,d):
         t_v=np.array(d)
         T = t_v[:,0]
-        t0 = T[0]
-        T -= t0
+        self.t0 = int(T[0])
+        T -= self.t0
         gps_speed = t_v[:,1]
         self.Vinterpoated = I.splrep(T, gps_speed, s=0)
+
+    #
+    def speed(self, Tmsec: int):
+        # use interpolated gps speed
+        v = abs(I.splev(Tmsec, self.Vinterpoated, der=0))
+        b = (v > self.Vthreshold).astype(int)
+        return v*b
 
     # 
     def db_open(self,index_file):
@@ -232,13 +265,6 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.connection.enable_load_extension(True)
         self.cursor = self.connection.cursor()
         self.cursor.execute("SELECT load_extension('mod_spatialite')")
-
-    #
-    def speed(self, Tmsec: int):
-        # use interpolated gps speed
-        v = abs(I.splev(Tmsec, self.Vinterpoated, der=0))
-        b = (v > self.Vthreshold).astype(int)
-        return v*b
 
     # 
     def file_name(self,file_id: int) -> str:
