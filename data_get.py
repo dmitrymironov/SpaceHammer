@@ -11,24 +11,35 @@ Targets are speed regression values
 '''
 
 class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
-    connection = None
-    Vthreshold = 0.5  # km/h, ignore GPS noise
-    num_samples = 0
-    num_batches = 0
+    connection = None # database connection handler for GT
+    Vthreshold = 0.5  # km/h, GPS trheshold noise
+    num_samples = -1 # number of frames in the sequence
+    num_batches = -1 # number of batches
+    batch_size = -1 # number of frames in the batch
     Nff = 1800 # Frames per file. On our dataset it's constant
-    file_ids = []
-    current_file_id = -1
-    cap = None
-    batch_x = None
-    Wframe = 1080
+    file_cnt=0 # from 0 to len(file_ids)
+    file_ids = [] # indexes of files in the dataset
+    current_file_id = -1 # current file id
+    current_file_pos = -1 # current file frame id
+    cap = None # opencv video handler
+    batch_x = None # batch_x - batches RAM placeholders
+    batch_y = None # batch_y 
+
+    Htxt = 50 # Garmin text cropping line height
+    Wframe = 1080 # Garmin frame WxH
     Hframe = 1920
-    CHframe = 6
+    CHframe = 6 # Num channels per X
+
     '''
+                        INITIALIZE (generator method)
     Use file or track id to load data sequence
     '''
     def __init__(self, fn_idx, track_id=None, file_id=None):
         self.batch_size = 32
-        self.batch_x = np.zeros((self.batch_size,self.Wframe,self.Hframe,self.CHframe))
+        self.batch_x = np.zeros((self.batch_size, \
+            self.Wframe, self.Hframe-self.Htxt, \
+                self.CHframe))
+        self.batch_y = np.zeros((self.batch_size))
         self.index_file = fn_idx
         self.db_open(fn_idx)
         # load ground truth data from the db
@@ -39,20 +50,22 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.num_samples = len(self.file_ids)*self.Nff
         self.num_batches = self.num_samples / self.batch_size
 
+    '''
+    number of batches (generator method)
+    '''
     def __len__(self):
         return self.num_batches
 
     '''
     Garmin video:
-        crop bottom with GPS text
+        crop bottom with GPS text, rescale
     '''
     def garmin_crop(self, img, target_dim=(640, 480)):
         # target aspect ratio, W/H
         ar = target_dim[0]/target_dim[1]
         # image size for opencv is H x W
         sz = img.shape
-        Htxt = 50
-        new_sz = [sz[0]-Htxt, sz[1]]
+        new_sz = [sz[0]-self.Htxt, sz[1]]
         if new_sz[1]/new_sz[0] < ar:
             # truncate height
             new_sz[0] = int(new_sz[1]/ar)
@@ -60,22 +73,24 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         else:
             # turncate width
             new_sz[1] = int(new_sz[0]*ar)
-            dw = [Htxt, int((sz[1]-new_sz[1])/2)]
+            dw = [self.Htxt, int((sz[1]-new_sz[1])/2)]
         return img[0:sz[0]-dw[0], 0:sz[1]-dw[1]]
 
     '''
     Get next frame in the sequence
     '''
-    def get_frame(self,file_idx,idx):
+    def get_frame(self):
         '''
         Open file if it was not yet opened
         '''
-        if current_file_id != file_idx:
+        if self.current_file_id == -1:
             if self.cap is not None:
                 self.cap.release()
                 self.cap = None
-            current_file_id = file_idx
-            fn = self.file_name(current_file_id)
+            self.current_file_id=self.file_ids[self.file_cnt]
+            assert file_cnt>=len(file_ids), "All files has been processed"
+            self.current_file_pos = 0
+            fn = self.file_name(self.current_file_id)
             self.cap = cv2.VideoCapture(fn)
             self.frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
             self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -95,17 +110,42 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         return garmin_crop(img)
 
     '''
-    return file_idx and frame idx
+    Get current file_idx and frame idx
     '''
     def get_position(self):        
-        if self.cap is None: 
-            return -1,-1
-        return current_file_id, self.cap.get(CV_CAP_PROP_POS_FRAMES)
+        assert self.cap is not None, "get_position expects opened file"
+        self.current_file_pos = self.cap.get(CV_CAP_PROP_POS_FRAMES)
+        return self.current_file_id, self.current_file_pos
 
+    def move_one(self):
+        if self.current_file_pos+1 == self.Nff:
+            # trigger switching to a next file
+            self.file_cnt = self.file_cnt+1
+            self.current_file_id = -1
+        else:
+            self.current_file_pos = self.current_file_pos+1
+    '''
+    Get batch_x and batch_y for training (generator method)
+    '''
     def __getitem__(self, batch_idx: int):
+        frame1 = None
+        frame2 = None
+        for batch_pos in range(self.batch_size):
+            if frame2 is None:
+                self.get_position()
+                frame1 = self.get_frame()
+            else:
+                frame1 = frame2
+            self.move_on()
+            frame2 = self.get_frame()
+            self.batch_x[batch_pos]=[frame1,frame2]
+            Tframe = (batch_idx*self.batch_size+batch_pos)*1000
+            self.batch_y[batch_pos] = self.speed(Tframe)
+        return self.batch_x, self.batch_y
 
-
-    #
+    '''
+    Database operations to provide ground truth
+    '''
     def preload_track(self, track_id: int):
         cursor = self.connection.cursor()
         cursor.execute(
