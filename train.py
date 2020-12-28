@@ -14,6 +14,7 @@ def main():
     else:
         db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     ggen = data_get.tfGarminFrameGen(db,1)
+    print("Done!")
 
 if __name__ == "__main__":
     main()
