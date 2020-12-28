@@ -14,6 +14,7 @@ def main():
     else:
         db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     db = os.path.normpath(db)
+    # 9 is the shortest track
     ggen = data_get.tfGarminFrameGen(db,1)
     # traverse generator for debug reasons
     for batch_idx in range(ggen.__len__()):

@@ -120,7 +120,10 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         if actual_pos != frame_idx:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = self.cap.read()
+        '''
+        #debug
         cv2.imshow("debug1", img)
+        '''
         assert ret, "Broken video '{}'".format(self.fn)
         return self.garmin_crop(img,self.train_image_dim)
 
@@ -175,11 +178,13 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
             else:
                 # We've reached the end, just repeating the last frame
-                assert fEndReached, "We should not stack more than one end frame"
+                assert not fEndReached, "We should not stack more than one end frame"
                 self.batch_x[batch_pos] = tf.concat([frame1, frame1], axis=2)
                 self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
                 fEndReached=True
-                    
+
+            '''
+            # debug                    
             test1 = self.batch_x[batch_pos, :, :, 0:3]
             assert np.array_equal(frame1,test1), "Incorrect concatenation"
             fmt = '%m/%d/%Y %H:%M:%S'
@@ -190,6 +195,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 "{:.2f} km/h {}".format(self.batch_y[batch_pos], Ts))
             cv2.imshow("debug", img)
             cv2.waitKey(1)
+            '''
         return self.batch_x, self.batch_y
 
     '''
