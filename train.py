@@ -14,6 +14,10 @@ def main():
     else:
         db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     ggen = data_get.tfGarminFrameGen(db,1)
+    # traverse generator for debug reasons
+    for batch_idx in range(ggen.__len__()):
+        x, y = ggen.__getitem__(batch_idx)
+
     print("Done!")
 
 if __name__ == "__main__":

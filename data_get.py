@@ -14,7 +14,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     connection = None # database connection handler for GT
     Vthreshold = 0.5  # km/h, GPS trheshold noise
     num_samples = -1 # number of frames in the sequence
-    num_batches = -1 # number of batches
+    num_batches: int = -1 # number of batches
     batch_size = -1 # number of frames in the batch
     Nff = 1800 # Frames per file. On our dataset it's constant
     file_ids = [] # indexes of files in the dataset
@@ -34,7 +34,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Use file or track id to load data sequence
     '''
     def __init__(self, fn_idx, track_id=None, file_id=None):
-        self.batch_size = 32
+        self.batch_size = 30
         assert self.Nff % self.batch_size == 0, "Batch size is not divisible"
         self.batch_x = np.zeros((self.batch_size, \
             self.Wframe, self.Hframe-self.Htxt, \
@@ -48,7 +48,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         else:
             self.preload_file(file_id)
         self.num_samples = len(self.file_ids)*self.Nff
-        self.num_batches = self.num_samples / self.batch_size
+        self.num_batches = int(self.num_samples / self.batch_size)
 
     '''
     number of batches (generator method)
@@ -110,7 +110,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         '''
         assert frame_idx >= 0 & frame_idx <= self.Nff, "Illegal frame idx"
         # set to a proper frame
-        if self.cap.get(cv2.CV_CAP_PROP_POS_FRAMES) != frame_idx:
+        if self.cap.get(cv2.CAP_PROP_POS_FRAMES) != frame_idx:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = self.cap.read()
         assert ret, "Broken video '{}'".format(self.fn)
@@ -121,7 +121,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     '''
     def get_position(self):        
         assert self.cap is not None, "get_position expects opened file"
-        self.current_file_pos = self.cap.get(cv2.CV_CAP_PROP_POS_FRAMES)
+        self.current_file_pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
         return self.current_file_id, self.current_file_pos
 
     def move_on(self):
@@ -145,7 +145,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         frame1 = None
         frame2 = None
         self.file_ids_pos = int(batch_idx*self.batch_size/self.Nff)
-        self.select_file(self.file_ids[self.file_ids_pos])
+        self.select_file(self.file_ids[self.file_ids_pos][0])
         self.current_file_pos=int(batch_idx*self.batch_size)%self.Nff
         fEndReached=False
         for batch_pos in range(self.batch_size):
@@ -248,7 +248,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id AND f.id=(?)
             ''', (file_id,)
         )
-        return cursor.fetchall()[0][0]
+        return os.path.normpath(cursor.fetchall()[0][0])
 
     # dtor
     def __del__(self):
