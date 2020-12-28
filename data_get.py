@@ -18,11 +18,17 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Nff = 1800 # Frames per file. On our dataset it's constant
     file_ids = []
     current_file_id = -1
+    cap = None
+    batch_x = None
+    Wframe = 1080
+    Hframe = 1920
+    CHframe = 6
     '''
     Use file or track id to load data sequence
     '''
     def __init__(self, fn_idx, track_id=None, file_id=None):
         self.batch_size = 32
+        self.batch_x = np.zeros((self.batch_size,self.Wframe,self.Hframe,self.CHframe))
         self.index_file = fn_idx
         self.db_open(fn_idx)
         # load ground truth data from the db
@@ -36,32 +42,68 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     def __len__(self):
         return self.num_batches
 
+    '''
+    Garmin video:
+        crop bottom with GPS text
+    '''
+    def garmin_crop(self, img, target_dim=(640, 480)):
+        # target aspect ratio, W/H
+        ar = target_dim[0]/target_dim[1]
+        # image size for opencv is H x W
+        sz = img.shape
+        Htxt = 50
+        new_sz = [sz[0]-Htxt, sz[1]]
+        if new_sz[1]/new_sz[0] < ar:
+            # truncate height
+            new_sz[0] = int(new_sz[1]/ar)
+            dw = [int((sz[0]-new_sz[0])/2), 0]
+        else:
+            # turncate width
+            new_sz[1] = int(new_sz[0]*ar)
+            dw = [Htxt, int((sz[1]-new_sz[1])/2)]
+        return img[0:sz[0]-dw[0], 0:sz[1]-dw[1]]
+
+    '''
+    Get next frame in the sequence
+    '''
+    def get_frame(self,file_idx,idx):
+        '''
+        Open file if it was not yet opened
+        '''
+        if current_file_id != file_idx:
+            if self.cap is not None:
+                self.cap.release()
+                self.cap = None
+            current_file_id = file_idx
+            fn = self.file_name(current_file_id)
+            self.cap = cv2.VideoCapture(fn)
+            self.frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
+            print("Loading '{}' {}x{} {}fps, {} frames".format(
+                fn, self. W, self.H, self.FPS, self.frameCount))
+        '''
+        Read next frame
+        '''
+        assert idx >= 0 & idx <= self.frameCount, "Illegal frame idx"
+        # set to a proper frame
+        if self.cap.get(CV_CAP_PROP_POS_FRAMES)!=idx:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, img = cap.read()
+        assert ret, "Broken video '{}'".format(file_idx)
+        return garmin_crop(img)
+
+    '''
+    return file_idx and frame idx
+    '''
+    def get_position(self):        
+        if self.cap is None: 
+            return -1,-1
+        return current_file_id, self.cap.get(CV_CAP_PROP_POS_FRAMES)
+
     def __getitem__(self, batch_idx: int):
-        '''
-        batch_x = self.x[batch_idx * self.batch_size:(batch_idx + 1) *
-                         self.batch_size]
-        batch_y = self.y[batch_idx * self.batch_size:(batch_idx + 1) *
-                         self.batch_size]
-        '''
-        --- TODO -- 
-        fn = self.file_name(file_id)
-        cap = cv2.VideoCapture(fn)
-        frameCount = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        FPS = int(cap.get(cv2.CAP_PROP_FPS))
-        print("Loaded '{}' {}x{} {}fps, {} frames".format(
-            fn, W, H, FPS, frameCount))
-        # we'll save images in numpy array and let tensorflow do
-        # all the heavy lifting with image transofrmation later
-        images = np.zeros((self.Nff, 1080, 1920, 3))
-        for idx in range(self.Nff):
-            ret, images[idx] = cap.read()
-            assert ret, "Broken video '{}'".format(file_id)
-            #assert img.shape == (1080, 1920, 3), "Unexpected garmin dimensions"
-            #self.pos_msec = int(cap.get(cv2.CAP_PROP_POS_MSEC))
-        #self.images = tf.convert_to_tensor(images)
-        self.current_file_id = file_id return batch_x, batch_y
+
 
     #
     def preload_track(self, track_id: int):
