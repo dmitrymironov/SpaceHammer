@@ -22,10 +22,11 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     file_ids = [] # indexes of files in the dataset
     current_file_id = -1 # current file id
     current_file_pos = -1 # current file frame id
-    cap = None # opencv video handler
+    Tstart = None  # Epoch time of the current file first frame
+    cap = None  # opencv video handler
     batch_x = None # batch_x - batches RAM placeholders
     batch_y = None # batch_y 
-    t0 = -1 # beginning of the track, epoch
+    #t0 = -1 # beginning of the track, epoch
     train_image_dim = (640, 480)
 
     Htxt = 50 # Garmin text cropping line height
@@ -101,6 +102,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
+        self.Tstart = self.get_start_time(self.current_file_id)
         print("Loading '{}' {}x{} {}fps, {} frames".format(
             self.fn, self. W, self.H, self.FPS, self.Nff))
 
@@ -143,6 +145,9 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 self.select_file(self.file_ids[self.file_ids_pos][0])
         else:
             self.current_file_pos = self.current_file_pos+1
+        # msec of a current frame
+        self.pos_msec = int(self.cap.get(cv2.CAP_PROP_POS_MSEC))
+        self.Tlocaltime = self.Tstart+self.pos_msec
         return True
     '''
     Get batch_x and batch_y for training (generator method)
@@ -167,18 +172,18 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 # Garmin overlaps frames in different videos, that leads
                 # to accumulation of time ahead diff
                 # --- Tframe = int((batch_idx*self.batch_size+batch_pos)*1000./self.FPS)
-                self.batch_y[batch_pos] = self.speed(Tframe)
+                self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
             else:
                 # We've reached the end, just repeating the last frame
                 assert fEndReached, "We should not stack more than one end frame"
                 self.batch_x[batch_pos] = tf.concat([frame1, frame1], axis=2)
-                self.batch_y[batch_pos] = self.speed(Tframe)
+                self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
                 fEndReached=True
                     
             test1 = self.batch_x[batch_pos, :, :, 0:3]
             assert np.array_equal(frame1,test1), "Incorrect concatenation"
             fmt = '%m/%d/%Y %H:%M:%S'
-            t = datetime.datetime.fromtimestamp((self.t0+Tframe)/1000.)
+            t = datetime.datetime.fromtimestamp(self.Tlocaltime/1000.)
             # t_utc = datetime.datetime.utcfromtimestamp(float(s)/1000.)
             Ts = t.strftime(fmt)
             img = self.put_text(frame1,
@@ -241,8 +246,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     def load_speed_labels(self,d):
         t_v=np.array(d)
         T = t_v[:,0]
-        self.t0 = int(T[0])
-        T -= self.t0
+        #self.t0 = int(T[0])
+        #T -= self.t0
         gps_speed = t_v[:,1]
         self.Vinterpoated = I.splrep(T, gps_speed, s=0)
 
@@ -265,6 +270,14 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.connection.enable_load_extension(True)
         self.cursor = self.connection.cursor()
         self.cursor.execute("SELECT load_extension('mod_spatialite')")
+
+    def get_start_time(self, file_id: int) -> int:
+        self.cursor.execute(
+            '''
+            SELECT MIN(timestamp)/1000 FROM Locations WHERE file_id={}
+            '''.format(file_id)
+        )
+        return int(self.cursor.fetchall()[0][0])
 
     # 
     def file_name(self,file_id: int) -> str:
