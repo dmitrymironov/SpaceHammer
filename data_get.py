@@ -98,7 +98,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
         print("Loading '{}' {}x{} {}fps, {} frames".format(
-            fn, self. W, self.H, self.FPS, self.frameCount))
+            fn, self. W, self.H, self.FPS, self.Nff))
 
     '''
     Get next frame in the sequence
@@ -108,13 +108,13 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         '''
         Read next frame
         '''
-        assert frame_idx >= 0 & frame_idx <= self.frameCount, "Illegal frame idx"
+        assert frame_idx >= 0 & frame_idx <= self.Nff, "Illegal frame idx"
         # set to a proper frame
         if self.cap.get(cv2.CV_CAP_PROP_POS_FRAMES) != frame_idx:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = cap.read()
         assert ret, "Broken video '{}'".format(self.fn)
-        return garmin_crop(img)
+        return self.garmin_crop(img)
 
     '''
     Get current file_idx and frame idx
@@ -125,7 +125,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         return self.current_file_id, self.current_file_pos
 
     def move_on(self):
-        if self.current_file_pos+1 == self.Nff:
+        if self.current_file_pos+1 >= self.Nff:
             # trigger switching to a next file
             self.file_cnt = self.file_cnt+1
             self.current_file_id = -1
@@ -139,15 +139,16 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         frame2 = None
         file_id = int(batch_idx*self.batch_size/self.Nff)
         self.select_file(self.file_ids[file_id])
-        self.current_file_pos=int(batch_idx*self.batch_size)%self.frameCount
+        self.current_file_pos=int(batch_idx*self.batch_size)%self.Nff
         for batch_pos in range(self.batch_size):
             if frame2 is None:
-                frame1 = self.get_frame()
+                frame1 = self.get_frame(self.current_file_pos)
             else:
                 frame1 = frame2
             self.move_on()
-            frame2 = self.get_frame()
-            self.batch_x[batch_pos]=[frame1,frame2]
+            frame2 = self.get_frame(self.current_file_pos)
+            # channels concatenate
+            self.batch_x[batch_pos]=np.concatenate(frame1,frame2,axis=2)
             Tframe = (batch_idx*self.batch_size+batch_pos)*1000
             self.batch_y[batch_pos] = self.speed(Tframe)
         return self.batch_x, self.batch_y
