@@ -13,6 +13,7 @@ def main():
         db = r'C:\\msys64\\home\\dmmie\\.dashcam.software\\dashcam.index'
     else:
         db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
+    db = os.path.normpath(db)
     ggen = data_get.tfGarminFrameGen(db,1)
     # traverse generator for debug reasons
     for batch_idx in range(ggen.__len__()):

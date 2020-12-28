@@ -12,6 +12,8 @@ Targets are speed regression values
 
 class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     connection = None # database connection handler for GT
+    cursor = None
+
     Vthreshold = 0.5  # km/h, GPS trheshold noise
     num_samples = -1 # number of frames in the sequence
     num_batches: int = -1 # number of batches
@@ -39,7 +41,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         assert self.Nff % self.batch_size == 0, "Batch size is not divisible"
         self.batch_x = np.zeros((self.batch_size, \
             self.train_image_dim[1], self.train_image_dim[0],
-                self.CHframe))
+                self.CHframe*2))
         self.batch_y = np.zeros((self.batch_size))
         self.index_file = fn_idx
         self.db_open(fn_idx)
@@ -135,7 +137,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 self.current_file_pos = -2
                 return False
             else:
-                self.select_file(self.file_ids[self.file_ids_pos])
+                self.select_file(self.file_ids[self.file_ids_pos][0])
         else:
             self.current_file_pos = self.current_file_pos+1
         return True
@@ -172,8 +174,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Database operations to provide ground truth
     '''
     def preload_track(self, track_id: int):
-        cursor = self.connection.cursor()
-        cursor.execute(
+        self.cursor.execute(
             '''
             SELECT timestamp/1000,CAST(speed AS real)
             FROM Locations 
@@ -182,19 +183,18 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             ''',
             (track_id,)
         )
-        self.load_speed_labels(cursor.fetchall())
-        cursor.execute(
+        self.load_speed_labels(self.cursor.fetchall())
+        self.cursor.execute(
             '''
             SELECT DISTINCT(file_id) FROM Locations WHERE track_id=(?) 
             ORDER BY timestamp
             ''', (track_id,)
         )
-        self.file_ids = cursor.fetchall()
+        self.file_ids = self.cursor.fetchall()
 
     #
     def preload_file(self, file_id):
-        cursor = self.connection.cursor()
-        cursor.execute(
+        self.cursor.execute(
             '''
             SELECT timestamp/1000,CAST(speed AS real)
             FROM Locations 
@@ -203,8 +203,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             ''',
             (file_id,)
         )        
-        self.load_speed_labels(cursor.fetchall())
-        cursor.execute(
+        self.load_speed_labels(self.cursor.fetchall())
+        self.cursor.execute(
             '''
             SELECT COUNT(*) FROM Locations WHERE file_id=(?)
             ''', (file_id,)
@@ -230,7 +230,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             assert False, sqlite3.Error
         # load spatial extensions (GEOS based wkt etc)
         self.connection.enable_load_extension(True)
-        self.connection.cursor().execute("SELECT load_extension('mod_spatialite')")
+        self.cursor = self.connection.cursor()
+        self.cursor.execute("SELECT load_extension('mod_spatialite')")
 
     #
     def speed(self, Tmsec: int):
@@ -241,15 +242,14 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
 
     # 
     def file_name(self,file_id: int) -> str:
-        cursor = self.connection.cursor()
-        cursor.execute(
+        self.cursor.execute(
             '''
             SELECT d.path || "/" || f.name
             FROM Files as f, Folders as d
-            WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id AND f.id=(?)
-            ''', (file_id,)
-        )
-        return os.path.normpath(cursor.fetchall()[0][0])
+            WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id AND f.id={}
+            '''.format(file_id)
+            )
+        return os.path.normpath(self.cursor.fetchall()[0][0])
 
     # dtor
     def __del__(self):
