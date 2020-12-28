@@ -17,7 +17,6 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     num_batches = -1 # number of batches
     batch_size = -1 # number of frames in the batch
     Nff = 1800 # Frames per file. On our dataset it's constant
-    file_cnt=0 # from 0 to len(file_ids)
     file_ids = [] # indexes of files in the dataset
     current_file_id = -1 # current file id
     current_file_pos = -1 # current file frame id
@@ -36,6 +35,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     '''
     def __init__(self, fn_idx, track_id=None, file_id=None):
         self.batch_size = 32
+        assert self.Nff % self.batch_size == 0, "Batch size is not divisible"
         self.batch_x = np.zeros((self.batch_size, \
             self.Wframe, self.Hframe-self.Htxt, \
                 self.CHframe))
@@ -65,6 +65,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         ar = target_dim[0]/target_dim[1]
         # image size for opencv is H x W
         sz = img.shape
+        assert sz == (self.Wframe, self.Hframe, self.CHframe), "Unexpected image dimensions"
         new_sz = [sz[0]-self.Htxt, sz[1]]
         if new_sz[1]/new_sz[0] < ar:
             # truncate height
@@ -77,36 +78,42 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         return img[0:sz[0]-dw[0], 0:sz[1]-dw[1]]
 
     '''
+    position to a particular file
+    '''
+    def select_file(self, file_id: int):
+        # if we're already positioned in the file, return
+        if file_id==self.current_file_id:
+            return
+        # close previously opened file
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
+        self.current_file_id=file_id
+        self.current_file_pos = 0
+        self.fn = self.file_name(self.current_file_id)
+        self.cap = cv2.VideoCapture(self.fn)
+        frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        assert frameCount==self.Nff, "Unexpected frame count"
+        self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
+        print("Loading '{}' {}x{} {}fps, {} frames".format(
+            fn, self. W, self.H, self.FPS, self.frameCount))
+
+    '''
     Get next frame in the sequence
     '''
-    def get_frame(self):
-        '''
-        Open file if it was not yet opened
-        '''
-        if self.current_file_id == -1:
-            if self.cap is not None:
-                self.cap.release()
-                self.cap = None
-            self.current_file_id=self.file_ids[self.file_cnt]
-            assert file_cnt>=len(file_ids), "All files has been processed"
-            self.current_file_pos = 0
-            fn = self.file_name(self.current_file_id)
-            self.cap = cv2.VideoCapture(fn)
-            self.frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
-            print("Loading '{}' {}x{} {}fps, {} frames".format(
-                fn, self. W, self.H, self.FPS, self.frameCount))
+    def get_frame(self, frame_idx):
+
         '''
         Read next frame
         '''
-        assert idx >= 0 & idx <= self.frameCount, "Illegal frame idx"
+        assert frame_idx >= 0 & frame_idx <= self.frameCount, "Illegal frame idx"
         # set to a proper frame
-        if self.cap.get(CV_CAP_PROP_POS_FRAMES)!=idx:
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        if self.cap.get(cv2.CV_CAP_PROP_POS_FRAMES) != frame_idx:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = cap.read()
-        assert ret, "Broken video '{}'".format(file_idx)
+        assert ret, "Broken video '{}'".format(self.fn)
         return garmin_crop(img)
 
     '''
@@ -114,10 +121,10 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     '''
     def get_position(self):        
         assert self.cap is not None, "get_position expects opened file"
-        self.current_file_pos = self.cap.get(CV_CAP_PROP_POS_FRAMES)
+        self.current_file_pos = self.cap.get(cv2.CV_CAP_PROP_POS_FRAMES)
         return self.current_file_id, self.current_file_pos
 
-    def move_one(self):
+    def move_on(self):
         if self.current_file_pos+1 == self.Nff:
             # trigger switching to a next file
             self.file_cnt = self.file_cnt+1
@@ -130,9 +137,11 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     def __getitem__(self, batch_idx: int):
         frame1 = None
         frame2 = None
+        file_id = int(batch_idx*self.batch_size/self.Nff)
+        self.select_file(self.file_ids[file_id])
+        self.current_file_pos=int(batch_idx*self.batch_size)%self.frameCount
         for batch_pos in range(self.batch_size):
             if frame2 is None:
-                self.get_position()
                 frame1 = self.get_frame()
             else:
                 frame1 = frame2
