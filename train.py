@@ -41,17 +41,10 @@ def main():
     '''
     Model
     '''
-    topModel = Sequential(
-        [
-        models.FlowNet(height=train_gen.Hframe,width=train_gen.Wframe),
-        models.PoseConvGRUNet()
-        ]
-    )
-
 
     model = Sequential(
         [
-            layers.TimeDistributed(topModel())
+            layers.TimeDistributed(models.TopModel())
         ]
     )
 
@@ -61,7 +54,7 @@ def main():
     Train
     '''
     model.fit_generator(
-        generator=training_gen,
+        generator=train_gen,
         validation_data=validation_gen,
         use_multiprocessing=True,
         workers=4

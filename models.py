@@ -94,3 +94,13 @@ class PoseConvGRUNet(keras.Model):
         x = self.leaky_relu_3(x)
         x = self.out(x)
         return x
+
+class TopModel(keras.Model):
+    def __init__(self):
+        super().__init__()
+        self.fn = FlowNet(height=480,width=640)
+        self.pcg = PoseConvGRUNet()        
+    def call(self, inputs):
+        x = self.fn(inputs)
+        x = self.pcg(x)
+        return x
