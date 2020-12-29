@@ -6,6 +6,8 @@ import platform
 import numpy as np
 from keras.models import Sequential
 from tensorflow.keras import layers
+import keras.optimizers
+
 import models
 
 def main():
@@ -42,13 +44,11 @@ def main():
     Model
     '''
 
-    model = Sequential(
-        [
-            layers.TimeDistributed(models.TopModel())
-        ]
-    )
-
-    model.compile()
+    model =  models.TopModel()
+    opt = keras.optimizers.Adam(learning_rate=0.01)
+    model.compile(loss='mean_squared_error', optimizer=opt)
+    model.build(input_shape=(None,480,640,6))
+    print(model.summary())
 
     '''
     Train
@@ -56,9 +56,14 @@ def main():
     model.fit_generator(
         generator=train_gen,
         validation_data=validation_gen,
-        use_multiprocessing=True,
-        workers=4
-        ) 
+        use_multiprocessing=False
+        )
+    '''
+    #debug
+    use_multiprocessing=True,
+    workers=4
+    ) 
+    '''
 
     print("Done!")
 

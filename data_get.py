@@ -34,6 +34,9 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Hframe = 1920
     CHframe = 3 # Num channels per X
 
+    fid_name = {} # file id to name dict to avoid sql query
+    fid_start_time = {}  # file id to start time dict to avoid sql query
+
     '''
                         INITIALIZE (generator method)
     Use file or track id to load data sequence
@@ -52,6 +55,11 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             self.preload_track(track_id)
         else:
             self.preload_file(file_id)
+        # cache sql queries to prevent sqlite threading conflict
+        for fid in self.file_ids:
+            self.file_name(fid[0])
+            self.get_start_time(fid[0])
+        #
         self.num_samples = len(self.file_ids)*self.Nff
         self.num_batches = int(self.num_samples / self.batch_size)
 
@@ -121,10 +129,10 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         if actual_pos != frame_idx:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, img = self.cap.read()
-        #'''
+        '''
         #debug
         cv2.imshow("debug1", img)
-        #'''
+        '''
         assert ret, "Broken video '{}'".format(self.fn)
         return self.garmin_crop(img,self.train_image_dim)
 
@@ -184,7 +192,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
                 fEndReached=True
 
-            #'''
+            '''
             # debug                    
             test1 = self.batch_x[batch_pos, :, :, 0:3]
             assert np.array_equal(frame1,test1), "Incorrect concatenation"
@@ -196,8 +204,10 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                 "{:.2f} km/h {}".format(self.batch_y[batch_pos], Ts))
             cv2.imshow("debug", img)
             cv2.waitKey(1)
-            #'''
-        return self.batch_x, self.batch_y
+            '''
+        # keras is unable to work with uint8 type, so we'll cast it 
+        #return self.batch_x, self.batch_y
+        return tf.cast(self.batch_x, tf.float16), self.batch_y
 
     '''
     Add text to opencv image for debug
@@ -279,23 +289,34 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.cursor.execute("SELECT load_extension('mod_spatialite')")
 
     def get_start_time(self, file_id: int) -> int:
+        if file_id in self.fid_start_time:
+            return self.fid_start_time[file_id]
         self.cursor.execute(
             '''
             SELECT MIN(timestamp)/1000 FROM Locations WHERE file_id={}
             '''.format(file_id)
         )
-        return int(self.cursor.fetchall()[0][0])
+        self.fid_start_time[file_id] = int(self.cursor.fetchall()[0][0])
+        return self.fid_start_time[file_id]
 
-    # 
-    def file_name(self,file_id: int) -> str:
+    '''
+    Keras applies multi-threaded training so this method may potentially 
+    be invoked from various threads.
+    '''
+    def file_name(self,file_id: int):
+        if file_id in self.fid_name:
+            return self.fid_name[file_id];
         self.cursor.execute(
             '''
             SELECT d.path || "/" || f.name
             FROM Files as f, Folders as d
             WHERE f.hex_digest IS NOT NULL AND f.path_id=d.id AND f.id={}
             '''.format(file_id)
-            )
-        return os.path.normpath(self.cursor.fetchall()[0][0])
+            );
+        self.fid_name[file_id] = os.path.normpath(
+            self.cursor.fetchall()[0][0]
+            );
+        return self.fid_name[file_id]
 
     def get_file_id_by_pattern(self,pat):
         self.cursor.execute(

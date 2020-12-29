@@ -80,7 +80,8 @@ class PoseConvGRUNet(keras.Model):
         self.leaky_relu_2 = layers.LeakyReLU(0.1)
         self.dense_3 = layers.Dense(128)
         self.leaky_relu_3 = layers.LeakyReLU(0.1)
-        self.out = layers.Dense(6)
+        #self.out = layers.Dense(6)
+        self.out = layers.Dense(1) # only generating speed
 
     def call(self, inputs):
         x = self.max_pooling(inputs)
