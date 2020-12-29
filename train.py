@@ -60,20 +60,24 @@ def main():
     Model
     '''
 
-    model =  models.TopModel()
+    model = models.TopModel()
     opt = keras.optimizers.Adam(learning_rate=0.01)
     model.compile(loss='mean_squared_error', optimizer=opt)
-    model.build(input_shape=(None,480,640,6))
+    model.build(input_shape=(train_gen.batch_size,480, 640, 6))
     print(model.summary())
 
     '''
     Train
     '''
     model.fit_generator(
+        epochs=10,
         generator=train_gen,
+        steps_per_epoch=train_gen.__len__(),
         validation_data=validation_gen,
+        validation_steps=validation_gen.__len__(),
         use_multiprocessing=False
         )
+
     '''
     #debug
     use_multiprocessing=True,
