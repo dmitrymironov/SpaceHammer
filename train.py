@@ -63,8 +63,8 @@ def main():
     model = models.TopModel()
     opt = keras.optimizers.Adam(learning_rate=0.01)
     model.compile(loss='mean_squared_error', optimizer=opt)
-    model.build(input_shape=(train_gen.batch_size,480, 640, 6))
-    print(model.summary())
+    #model.build(input_shape=(train_gen.seq_size,480, 640, 6))
+    #print(model.summary())
 
     '''
     Train

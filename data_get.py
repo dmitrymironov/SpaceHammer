@@ -75,7 +75,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             self.seq_size,
             self.train_image_dim[1], self.train_image_dim[0],
             self.CHframe*2),dtype='uint8')
-        self.batch_y = np.zeros((self.batch_size,self.seq_size))
+        self.batch_y = np.zeros(
+            (self.batch_size, self.seq_size), dtype='float16')
 
     '''
     number of batches (generator method)
@@ -183,7 +184,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         b = batch_idx*self.batch_stride
         for i in range(self.batch_size):
             self.get_seq(batch_idx,b+i)
-        return self.batch_x, self.batch_y
+        return tf.cast(self.batch_x, tf.float16), self.batch_y
 
     '''
     Get sequence and y
@@ -235,7 +236,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         #return self.batch_x, self.batch_y
         # TODO: cast frame1/frame2 earlier after the debug is done
         # TODO: try caching concatenated pairs to speed-up training
-        return tf.cast(self.batch_x, tf.float16), self.batch_y
+        #return tf.cast(self.batch_x, tf.float16), self.batch_y
 
     '''
     Add text to opencv image for debug

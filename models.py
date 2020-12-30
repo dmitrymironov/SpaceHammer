@@ -46,6 +46,7 @@ class FlowNet(keras.Model):
         self.leaky_relu_6 = layers.LeakyReLU(alpha=0.1)
 
     def call(self, inputs):
+        assert inputs.shape==(480,640,6), "Incorrect FlowNet input shape"
         x = self.conv1(inputs)
         x = self.leaky_relu_1(x)
         x = self.conv2(x)
@@ -99,10 +100,11 @@ class PoseConvGRUNet(keras.Model):
 class TopModel(keras.Model):
     def __init__(self):
         super().__init__()
-        self.fn = layers.TimeDistributed(FlowNet())
+        self.fn = FlowNet()
         self.pcg = PoseConvGRUNet()        
 
     def call(self, inputs):
-        x = self.fn(inputs)
+        assert inputs.shape == (30,480, 640, 6), "Incorrect TopModel input shape"
+        x = layers.TimeDistributed(self.fn)(inputs)
         x = self.pcg(x)
         return x
