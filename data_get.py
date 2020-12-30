@@ -15,9 +15,17 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     cursor = None
 
     Vthreshold = 0.5  # km/h, GPS trheshold noise
-    num_samples = -1 # number of frames in the sequence
+    num_samples = -1 # number of frames in a whole track (or file)
+    
+    # feeding into the model
+    # batch_size, seq_size, 480, 640, 6
     num_batches: int = -1 # number of batches
-    batch_size = -1 # number of frames in the batch
+    batch_size = 10 # N of temporal frame pairs sequences in the batch
+    
+    seq_size = 30 # temporal dimension, number of frame pairs per x
+    seq_stride = 20 # temporal stride between sequences
+    seq_num = -1 # Number of available sequences
+
     Nff = 1800 # Frames per file. On our dataset it's constant
     file_ids = [] # indexes of files in the dataset
     current_file_id = -1 # current file id
@@ -42,12 +50,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Use file or track id to load data sequence
     '''
     def __init__(self, fn_idx, track_id=None, file_id=None):
-        self.batch_size = 30
-        assert self.Nff % self.batch_size == 0, "Batch size is not divisible"
-        self.batch_x = np.zeros((self.batch_size, \
-            self.train_image_dim[1], self.train_image_dim[0],
-                self.CHframe*2),dtype='uint8')
-        self.batch_y = np.zeros((self.batch_size))
+        # db operations
+        #---------------
         self.index_file = fn_idx
         self.db_open(fn_idx)
         # load ground truth data from the db
@@ -55,13 +59,21 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             self.preload_track(track_id)
         else:
             self.preload_file(file_id)
+        '''
+        self.batch_x = np.zeros((self.batch_size, \
+            self.train_image_dim[1], self.train_image_dim[0],
+                self.CHframe*2),dtype='uint8')
+        self.batch_y = np.zeros((self.batch_size))
+        '''
         # cache sql queries to prevent sqlite threading conflict
+        #--------------------------------------------------------
         for fid in self.file_ids:
             self.file_name(fid[0])
             self.get_start_time(fid[0])
         #
         self.num_samples = len(self.file_ids)*self.Nff
-        self.num_batches = int(self.num_samples / self.batch_size)
+        self.seq_num = int((self.num_samples-self.seq_size)/self.seq_stride)
+        self.num_batches = int(self.seq_num/self.batch_size)
 
     '''
     number of batches (generator method)
@@ -165,14 +177,23 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Get batch_x and batch_y for training (generator method)
     '''
     def __getitem__(self, batch_idx: int):
+        '''
+        num_batches
+        '''
+        pass
+
+    '''
+    Get sequence and y
+    '''
+    def get_seq(self, batch_Idx: int, seq_idx: int):
         frame1 = None
         frame2 = None
-        self.file_ids_pos = int(batch_idx*self.batch_size/self.Nff)
+        self.file_ids_pos = int(seq_idx*self.seq_size/self.Nff)
         self.select_file(self.file_ids[self.file_ids_pos][0])
-        self.current_file_pos=int(batch_idx*self.batch_size)%self.Nff
+        self.current_file_pos = int(seq_idx*self.seq_size) % self.Nff
         fEndReached=False
-        test1=None
-        for batch_pos in range(self.batch_size):
+        #test1=None
+        for seq_pos in range(self.seq_size):
             if frame2 is None:
                 frame1 = self.get_frame(self.current_file_pos)
             else:
@@ -180,28 +201,28 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             if self.move_on(): 
                 frame2 = self.get_frame(self.current_file_pos)
                 # channels concatenate
-                self.batch_x[batch_pos] = tf.concat([frame1, frame2], axis=2)
+                self.batch_x[seq_pos] = tf.concat([frame1, frame2], axis=2)
                 # Garmin overlaps frames in different videos, that leads
                 # to accumulation of time ahead diff
-                # --- Tframe = int((batch_idx*self.batch_size+batch_pos)*1000./self.FPS)
-                self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
+                # --- Tframe = int((batch_idx*self.seq_size+seq_pos)*1000./self.FPS)
+                self.batch_y[seq_pos] = self.speed(self.Tlocaltime)
             else:
                 # We've reached the end, just repeating the last frame
                 assert not fEndReached, "We should not stack more than one end frame"
-                self.batch_x[batch_pos] = tf.concat([frame1, frame1], axis=2)
-                self.batch_y[batch_pos] = self.speed(self.Tlocaltime)
+                self.batch_x[seq_pos] = tf.concat([frame1, frame1], axis=2)
+                self.batch_y[seq_pos] = self.speed(self.Tlocaltime)
                 fEndReached=True
 
             '''
             # debug                    
-            test1 = self.batch_x[batch_pos, :, :, 0:3]
+            test1 = self.batch_x[seq_pos, :, :, 0:3]
             assert np.array_equal(frame1,test1), "Incorrect concatenation"
             fmt = '%m/%d/%Y %H:%M:%S'
             t = datetime.datetime.fromtimestamp(self.Tlocaltime/1000.)
             # t_utc = datetime.datetime.utcfromtimestamp(float(s)/1000.)
             Ts = t.strftime(fmt)
             img = self.put_text(frame1,
-                "{:.2f} km/h {}".format(self.batch_y[batch_pos], Ts))
+                "{:.2f} km/h {}".format(self.batch_y[seq_pos], Ts))
             cv2.imshow("debug", img)
             cv2.waitKey(1)
             '''
