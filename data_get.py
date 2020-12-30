@@ -21,6 +21,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     # batch_size, seq_size, 480, 640, 6
     num_batches: int = -1 # number of batches
     batch_size = 10 # N of temporal frame pairs sequences in the batch
+    batch_stride = 4 # temporal stride between batches (in sequences)
     
     seq_size = 30 # temporal dimension, number of frame pairs per x
     seq_stride = 20 # temporal stride between sequences
@@ -51,7 +52,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     '''
     def __init__(self, fn_idx, track_id=None, file_id=None):
         # db operations
-        #---------------
+        #---------------------------------------------------------------
         self.index_file = fn_idx
         self.db_open(fn_idx)
         # load ground truth data from the db
@@ -59,21 +60,22 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             self.preload_track(track_id)
         else:
             self.preload_file(file_id)
-        '''
-        self.batch_x = np.zeros((self.batch_size, \
-            self.train_image_dim[1], self.train_image_dim[0],
-                self.CHframe*2),dtype='uint8')
-        self.batch_y = np.zeros((self.batch_size))
-        '''
         # cache sql queries to prevent sqlite threading conflict
-        #--------------------------------------------------------
+        #---------------------------------------------------------------
         for fid in self.file_ids:
             self.file_name(fid[0])
             self.get_start_time(fid[0])
         #
         self.num_samples = len(self.file_ids)*self.Nff
         self.seq_num = int((self.num_samples-self.seq_size)/self.seq_stride)
-        self.num_batches = int(self.seq_num/self.batch_size)
+        self.num_batches = int((self.seq_num-self.batch_size)/self.batch_stride)
+        # initialise dimensions
+        #---------------------------------------------------------------
+        self.batch_x = np.zeros((self.batch_size, 
+            self.seq_size,
+            self.train_image_dim[1], self.train_image_dim[0],
+            self.CHframe*2),dtype='uint8')
+        self.batch_y = np.zeros((self.batch_size,self.seq_size))
 
     '''
     number of batches (generator method)
@@ -177,20 +179,23 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Get batch_x and batch_y for training (generator method)
     '''
     def __getitem__(self, batch_idx: int):
-        '''
-        num_batches
-        '''
-        pass
+        assert batch_idx < self.num_batches, "incorrect batch number"
+        b = batch_idx*self.batch_stride
+        for i in range(self.batch_size):
+            self.get_seq(batch_idx,b+i)
+        return self.batch_x, self.batch_y
 
     '''
     Get sequence and y
     '''
-    def get_seq(self, batch_Idx: int, seq_idx: int):
+    def get_seq(self, batch_idx:int, seq_idx: int):
         frame1 = None
         frame2 = None
-        self.file_ids_pos = int(seq_idx*self.seq_size/self.Nff)
+        # first frame number
+        self.file_ids_pos = int(seq_idx*self.seq_stride/self.Nff)
         self.select_file(self.file_ids[self.file_ids_pos][0])
-        self.current_file_pos = int(seq_idx*self.seq_size) % self.Nff
+        # position in a current video file
+        self.current_file_pos = int(seq_idx*self.seq_stride) % self.Nff
         fEndReached=False
         #test1=None
         for seq_pos in range(self.seq_size):
@@ -201,16 +206,16 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             if self.move_on(): 
                 frame2 = self.get_frame(self.current_file_pos)
                 # channels concatenate
-                self.batch_x[seq_pos] = tf.concat([frame1, frame2], axis=2)
+                self.batch_x[batch_idx,seq_pos] = tf.concat([frame1, frame2], axis=2)
                 # Garmin overlaps frames in different videos, that leads
                 # to accumulation of time ahead diff
                 # --- Tframe = int((batch_idx*self.seq_size+seq_pos)*1000./self.FPS)
-                self.batch_y[seq_pos] = self.speed(self.Tlocaltime)
+                self.batch_y[batch_idx,seq_pos] = self.speed(self.Tlocaltime)
             else:
                 # We've reached the end, just repeating the last frame
                 assert not fEndReached, "We should not stack more than one end frame"
-                self.batch_x[seq_pos] = tf.concat([frame1, frame1], axis=2)
-                self.batch_y[seq_pos] = self.speed(self.Tlocaltime)
+                self.batch_x[batch_idx,seq_pos] = tf.concat([frame1, frame1], axis=2)
+                self.batch_y[batch_idx,seq_pos] = self.speed(self.Tlocaltime)
                 fEndReached=True
 
             '''
@@ -228,6 +233,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             '''
         # keras is unable to work with uint8 type, so we'll cast it 
         #return self.batch_x, self.batch_y
+        # TODO: cast frame1/frame2 earlier after the debug is done
+        # TODO: try caching concatenated pairs to speed-up training
         return tf.cast(self.batch_x, tf.float16), self.batch_y
 
     '''
