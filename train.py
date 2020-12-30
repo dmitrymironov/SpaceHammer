@@ -69,14 +69,7 @@ def main():
     '''
     Train
     '''
-    model.fit_generator(
-        epochs=10,
-        generator=train_gen,
-        steps_per_epoch=train_gen.__len__(),
-        validation_data=validation_gen,
-        validation_steps=validation_gen.__len__(),
-        use_multiprocessing=False
-        )
+    model.fit(train_gen,validation_data=validation_gen)
 
     '''
     #debug

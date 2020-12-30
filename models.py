@@ -44,6 +44,8 @@ class FlowNet(keras.Model):
         self.conv6 = layers.Conv2D(1024, kernel_size=3, strides=2,
                               padding='same', name='conv6')
         self.leaky_relu_6 = layers.LeakyReLU(alpha=0.1)
+        self.max_pooling = layers.MaxPool2D(2, strides=2)
+        #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
 
     def call(self, inputs):
         assert inputs.shape==(480,640,6), "Incorrect FlowNet input shape"
@@ -65,13 +67,16 @@ class FlowNet(keras.Model):
         x = self.leaky_relu_5_1(x)
         x = self.conv6(x)
         x = self.leaky_relu_6(x)
+        x = self.max_pooling(x)
+        #self.max_pooling = layers.MaxPool2D(2, strides=2)
+        #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
         return x
 
 class PoseConvGRUNet(keras.Model):
-    def __init__(self,input_shape=(480, 640, 6)):
+    def __init__(self,input_shape=(20,6,1024)):
         super().__init__()
-        self.max_pooling = layers.MaxPool2D(2, strides=2)
-        self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
+        #self.max_pooling = layers.MaxPool2D(2, strides=2)
+        #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
         self.gru = layers.GRU(3)
         self.dense_1 = layers.Dense(4096)
         self.leaky_relu_1 = layers.LeakyReLU(0.1)
@@ -83,9 +88,9 @@ class PoseConvGRUNet(keras.Model):
         self.out = layers.Dense(1) # only generating speed
 
     def call(self, inputs):
-        x = self.max_pooling(inputs)
-        x = self.reshape(x)
-        x = self.gru(x)
+        #x = self.max_pooling(inputs)
+        #x = self.reshape(x)
+        x = self.gru(inputs)
         x = self.dense_1(x)
         x = self.leaky_relu_1(x)
         x = self.dense_2(x)
@@ -103,8 +108,9 @@ class TopModel(keras.Model):
         self.fn = FlowNet()
         self.pcg = PoseConvGRUNet()        
 
-    def call(self, inputs):
-        assert inputs.shape == (30,480, 640, 6), "Incorrect TopModel input shape"
-        x = layers.TimeDistributed(self.fn)(inputs)
+    def call(self, x):
+        # Our model gets sequence of frames and produces speed array
+        assert x.shape == (30,480, 640, 6), "Incorrect TopModel input shape"
+        x = layers.TimeDistributed(self.fn)(x)
         x = self.pcg(x)
         return x
