@@ -47,8 +47,11 @@ class FlowNet(keras.Model):
         self.max_pooling = layers.MaxPool2D(2, strides=2)
         #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
 
+    def compute_output_shape(seinput_shape):
+        return (4,5,1024)
+
     def call(self, inputs):
-        assert inputs.shape==(480,640,6), "Incorrect FlowNet input shape"
+        #assert inputs.shape==(480,640,6), "Incorrect FlowNet input shape"
         x = self.conv1(inputs)
         x = self.leaky_relu_1(x)
         x = self.conv2(x)
@@ -73,7 +76,7 @@ class FlowNet(keras.Model):
         return x
 
 class PoseConvGRUNet(keras.Model):
-    def __init__(self,input_shape=(20,6,1024)):
+    def __init__(self,input_shape=[20,6,1024]):
         super().__init__()
         #self.max_pooling = layers.MaxPool2D(2, strides=2)
         #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
@@ -102,15 +105,18 @@ class PoseConvGRUNet(keras.Model):
 '''
 [batch size, temporal dimension, Ximg,Yimg,Ch]
 '''
+'''
 class TopModel(keras.Model):
-    def __init__(self):
+    def __init__(self, shape=(60, 480, 640, 6)):
         super().__init__()
-        self.fn = FlowNet()
+        self.fn = layers.TimeDistributed(FlowNet())
         self.pcg = PoseConvGRUNet()        
 
     def call(self, x):
         # Our model gets sequence of frames and produces speed array
-        assert x.shape == (30,480, 640, 6), "Incorrect TopModel input shape"
-        x = layers.TimeDistributed(self.fn)(x)
+        assert inputs.shape == (
+            60, 480, 640, 6), "Incorrect TopModel input shape"
+        x = self.fn(x)
         x = self.pcg(x)
         return x
+'''
