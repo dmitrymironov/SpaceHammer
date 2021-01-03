@@ -70,7 +70,7 @@ def main():
         [
             TimeDistributed(
                 Conv2D(64, kernel_size=7, strides=2, padding='same',
-                       name='conv1', input_shape=(480, 640, 6)
+                       name='conv1'
                        ),
                 input_shape=(data_get.tfGarminFrameGen.batch_size, 480, 640, 6)
                 ),
@@ -135,6 +135,7 @@ def main():
     )
     model.compile(loss='mean_squared_error', optimizer=opt)
     model.summary()
+    keras.utils.plot_model(model, show_shapes=True)
     #model.build(input_shape=(train_gen.seq_size,480, 640, 6))
     #print(model.summary())
 
