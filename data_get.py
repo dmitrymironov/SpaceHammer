@@ -45,7 +45,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
                         INITIALIZE (generator method)
     Use file or track id to load data sequence
     '''
-    def __init__(self, fn_idx, track_id=None, file_id=None):
+    def __init__(self, fn_idx, name, track_id=None, file_id=None):
+        self.name = name
         # db operations
         #---------------------------------------------------------------
         self.index_file = fn_idx
@@ -120,7 +121,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
         self.Tstart = self.get_start_time(self.current_file_id)
-        print("Loading '{}' {}x{} {}fps, {} frames".format(
+        print("Loading {} '{}' {}x{} {}fps, {} frames".format(self.name,
             self.fn, self. W, self.H, self.FPS, self.Nff))
 
     '''
@@ -173,6 +174,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Get batch_x and batch_y for training (generator method)
     '''
     def __getitem__(self, batch_idx: int):
+        #print("Getting {} batch {}".format(self.name,batch_idx))
         assert batch_idx < self.num_batches, "incorrect batch number"
         frame1 = None
         frame2 = None
@@ -211,7 +213,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
             # t_utc = datetime.datetime.utcfromtimestamp(float(s)/1000.)
             Ts = t.strftime(fmt)
             img = self.put_text(frame1,
-                "{:.2f} km/h {}".format(self.batch_y[seq_pos], Ts))
+                                "{:.2f} km/h {}".format(self.batch_y[batch_pos], Ts))
             cv2.imshow("debug", img)
             cv2.waitKey(1)
             '''

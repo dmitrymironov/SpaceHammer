@@ -7,9 +7,10 @@ import numpy as np
 #from keras.models import Sequential
 from keras.layers import Conv2D, LeakyReLU, MaxPool2D, Dense, \
     TimeDistributed, GRU, Reshape, Input, Bidirectional, LSTM, \
-        RepeatVector, Wrapper
+    RepeatVector, Wrapper, BatchNormalization
 import keras.optimizers
 import models
+from keras.callbacks import ModelCheckpoint
 
 def main():
     os.system('clear')  # clear the terminal on linux
@@ -40,8 +41,8 @@ def main():
     '''
     Generators
     '''
-    train_gen = data_get.tfGarminFrameGen(db, track_id=1)
-    validation_gen = data_get.tfGarminFrameGen(db,file_id=5)
+    train_gen = data_get.tfGarminFrameGen(db, name='train', track_id=1)
+    validation_gen = data_get.tfGarminFrameGen(db, name='validation',file_id=5)
     '''
     # to match a particular file
     id, path = validation_gen.get_file_id_by_pattern('%Mt-Adams-11-nov-2020%GRMN0005.MP4')
@@ -66,13 +67,18 @@ def main():
     inputs = Input(shape=(480, 640, 6))
     x = flownet(inputs) # flownet is a temporal model
     x = Reshape(((-1, 5 * 1 * 1024)))(x)
-    x = Bidirectional(LSTM(3, return_sequences=True))(x)
-    x = LSTM(3)(x)
+    x = Bidirectional(LSTM(1000, return_sequences=True))(x)
+    x = BatchNormalization()(x)
+    x = LSTM(1000)(x)
+    x = BatchNormalization()(x)
     x = Dense(4096)(x)
+    x = BatchNormalization()(x)
     x = LeakyReLU(0.1)(x)
     x = Dense(1024)(x)
+    x = BatchNormalization()(x)
     x = LeakyReLU(0.1)(x)
     x = Dense(128)(x)
+    x = BatchNormalization()(x)
     x = LeakyReLU(0.1)(x)
     outputs = Dense(1)(x) # temporal dimension X V
 
@@ -83,7 +89,8 @@ def main():
 
     model = keras.Model(inputs=inputs, outputs=outputs, name="egomotion")
 
-    model.compile(loss='mean_squared_error', optimizer=opt)
+    model.compile(loss='mean_squared_error',
+                  optimizer=opt, metrics=['accuracy'])
 
     model.summary()
     #keras.utils.plot_model(model, show_shapes=True)
@@ -94,16 +101,22 @@ def main():
     Checkpoints
     '''
 
-    filepath = "weights-improvement-{epoch:02d}-{val_accuracy:.2f}.hdf5"
+    filepath = "save/egomotion-{epoch:02d}-{loss:.2f}.hdf5"
     checkpoint = ModelCheckpoint(
-        filepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max')
+        filepath, monitor='loss',
+        save_freq=10,
+        verbose=1, 
+        save_best_only=True, 
+        mode='auto')
+
     callbacks_list = [checkpoint]
 
     '''
     Train
     '''
     model.fit(train_gen, validation_data=validation_gen,
-              callbacks=callbacks_list)
+              callbacks=callbacks_list,
+              shuffle=False)
 
     '''
     #debug
