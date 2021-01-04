@@ -62,10 +62,31 @@ def main():
     Model
     '''
     opt = keras.optimizers.Adam(learning_rate=0.01)
-    flownet = models.FlowNet()
+    initializer = tf.keras.initializers.GlorotNormal()
+
     # data_get.tfGarminFrameGen.batch_size,
     inputs = Input(shape=(480, 640, 6))
-    x = flownet(inputs) # flownet is a temporal model
+
+    x = Conv2D(64, kernel_size=7, strides=2, padding='same',input_shape=(480, 640, 6), name='conv1')(inputs)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(128, kernel_size=5, strides=2, padding='same', name='conv2')(x)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(256, kernel_size=5, strides=2, padding='same', name='conv3')(x)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(256, kernel_size=3, strides=1, padding='same', name='conv3_1')(x)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(512, kernel_size=3, strides=2,padding='same', name='conv4')(x)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(512, kernel_size=3, strides=1, padding='same', name='conv4_1')(x)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(512, kernel_size=3, strides=2,padding='same', name='conv5')(x)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(512, kernel_size=3, strides=1, padding='same', name='conv5_1')(x)
+    x = LeakyReLU(0.1)(x)
+    x = Conv2D(1024, kernel_size=3, strides=2,padding='same', name='conv6')(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = MaxPool2D(2, strides=2)(x)
+
     x = Reshape(((-1, 5 * 1 * 1024)))(x)
     x = Bidirectional(LSTM(1000, return_sequences=True))(x)
     x = BatchNormalization()(x)
@@ -101,10 +122,9 @@ def main():
     Checkpoints
     '''
 
-    filepath = "save/egomotion-{epoch:02d}-{loss:.2f}.hdf5"
+    filepath = "save/egomotion-{epoch:02d}-{val_loss:.2f}.hdf5"
     checkpoint = ModelCheckpoint(
-        filepath, monitor='loss',
-        save_freq=10,
+        filepath, monitor='val_loss',
         verbose=1, 
         save_best_only=True, 
         mode='auto')
