@@ -45,13 +45,13 @@ class FlowNet(keras.Model):
                               padding='same', name='conv6')
         self.leaky_relu_6 = layers.LeakyReLU(alpha=0.1)
         self.max_pooling = layers.MaxPool2D(2, strides=2)
-        #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
 
-    def compute_output_shape(seinput_shape):
-        return (4,5,1024)
+    def compute_output_shape(self, input_shape):
+        return (None,4,5,1024)
 
     def call(self, inputs):
         #assert inputs.shape==(480,640,6), "Incorrect FlowNet input shape"
+        #x = layers.Reshape((480, 640, 6))(inputs)
         x = self.conv1(inputs)
         x = self.leaky_relu_1(x)
         x = self.conv2(x)
@@ -72,14 +72,14 @@ class FlowNet(keras.Model):
         x = self.leaky_relu_6(x)
         x = self.max_pooling(x)
         #self.max_pooling = layers.MaxPool2D(2, strides=2)
-        #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
         return x
 
 class PoseConvGRUNet(keras.Model):
-    def __init__(self,input_shape=[20,6,1024]):
+    def __init__(self):
         super().__init__()
         #self.max_pooling = layers.MaxPool2D(2, strides=2)
         #self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
+        self.reshape = layers.Reshape((-1, 5 * 1 * 1024))
         self.gru = layers.GRU(3)
         self.dense_1 = layers.Dense(4096)
         self.leaky_relu_1 = layers.LeakyReLU(0.1)
@@ -90,10 +90,10 @@ class PoseConvGRUNet(keras.Model):
         #self.out = layers.Dense(6)
         self.out = layers.Dense(1) # only generating speed
 
-    def call(self, inputs):
+    def call(self, x):
         #x = self.max_pooling(inputs)
-        #x = self.reshape(x)
-        x = self.gru(inputs)
+        x = self.reshape(x)
+        x = self.gru(x)
         x = self.dense_1(x)
         x = self.leaky_relu_1(x)
         x = self.dense_2(x)

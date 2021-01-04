@@ -19,7 +19,7 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     
     # feeding into the model
     num_batches: int = -1 # number of batches
-    batch_size = 60 # N of temporal frame pairs sequences in the batch
+    batch_size = 10 # N of temporal frame pairs sequences in the batch
     batch_stride = 4 # temporal stride between batches (in sequences)
 
     Nff = 1800 # Frames per file. On our dataset it's constant
