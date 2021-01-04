@@ -114,8 +114,8 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.fn = self.file_name(self.current_file_id)
         self.cap = cv2.VideoCapture(self.fn)
         frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        assert frameCount >= self.Nff, "Unexpected frame count {}".format(
-            frameCount)
+        assert frameCount >= self.Nff, "Unexpected frame count {} in '{}', should be 0 .. {}".format(
+            frameCount,self.fn,self.Nff)
         self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
@@ -242,7 +242,9 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
         self.load_speed_labels(self.cursor.fetchall())
         self.cursor.execute(
             '''
-            SELECT DISTINCT(file_id) FROM Locations WHERE track_id=(?) 
+            SELECT DISTINCT(file_id) FROM Locations WHERE track_id=(?)
+            GROUP BY file_id
+            HAVING COUNT(file_id)>=60
             ORDER BY timestamp
             ''', (track_id,)
         )
