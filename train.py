@@ -40,29 +40,20 @@ def main():
     print('================================================== TRAIN')
     '''
     Generators
+        1535|5
+        1692|8
+        2482|4
+        3208|12
+        5478|7
+        18256|6
     '''
-    train_gen = data_get.tfGarminFrameGen(db, name='train', track_id=1)
+    train_gen = data_get.tfGarminFrameGen(db, name='train', track_id=6) # 7, 12
     validation_gen = data_get.tfGarminFrameGen(db, name='validation',file_id=5)
-    '''
-    # to match a particular file
-    id, path = validation_gen.get_file_id_by_pattern('%Mt-Adams-11-nov-2020%GRMN0005.MP4')
-    path = os.path.normpath(path)
-    print('File "{}" id is "{}"'.format(path,id))
-    return 
-    '''
-
-    '''
-    # memory leak test loop
-    for iter in range(20):
-        for batch_idx in range(validation_gen.__len__()):
-            x, y = validation_gen.__getitem__(batch_idx)
-    '''
 
     '''
     Model
     '''
     opt = keras.optimizers.Adam(learning_rate=0.01)
-    initializer = tf.keras.initializers.GlorotNormal()
 
     # data_get.tfGarminFrameGen.batch_size,
     inputs = Input(shape=(480, 640, 6))
@@ -109,11 +100,13 @@ def main():
     '''
 
     model = keras.Model(inputs=inputs, outputs=outputs, name="egomotion")
-
-    model.compile(loss='mean_squared_error',
-                  optimizer=opt, metrics=['accuracy'])
-
+    model.compile(loss='mean_squared_error',optimizer=opt, metrics=['accuracy'])
     model.summary()
+
+    if True:
+        # Loads the weights
+        checkpoint_path = 'save/egomotion-01-183971936.00.hdf5'
+        model.load_weights(checkpoint_path)
     #keras.utils.plot_model(model, show_shapes=True)
     #model.build(input_shape=(train_gen.seq_size,480, 640, 6))
     #print(model.summary())
@@ -129,13 +122,13 @@ def main():
         save_best_only=True, 
         mode='auto')
 
-    callbacks_list = [checkpoint]
+    stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.001, patience=1)
 
     '''
     Train
     '''
     model.fit(train_gen, validation_data=validation_gen,
-              callbacks=callbacks_list,
+              callbacks=[checkpoint, stop_callback],
               shuffle=False)
 
     '''
