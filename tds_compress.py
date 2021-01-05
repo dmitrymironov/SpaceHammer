@@ -13,7 +13,7 @@ from scipy import interpolate as I
 #from keras.models import Sequential
 from keras.layers import Conv2D, LeakyReLU, MaxPool2D, Dense, \
     TimeDistributed, GRU, Reshape, Input, Bidirectional, LSTM, \
-    RepeatVector, Wrapper, BatchNormalization
+    RepeatVector, Wrapper, BatchNormalization, ReLU
 import keras.optimizers
 import models
 from keras.callbacks import ModelCheckpoint, EarlyStopping
@@ -70,7 +70,9 @@ class tfTemporalCompressor:
             '''.format(id)
         )
         data=np.asarray(self.cursor.fetchall())
-        return data[:,0],data[:,1:]
+        t = data[:, 0]
+        t0 = t[0]
+        return (t-t0)/1000,data[:,1:]
     #
     def db_open(self, index_file):
         print("Loading database from '" + index_file + "'")
@@ -111,13 +113,16 @@ class dsSplit(tensorflow.keras.utils.Sequence):
         return self.num_batches
 
     def __getitem__(self,i):
+        bx = np.zeros((1, self.batch_size))
+        by = np.zeros((1, self.batch_size))
         if i+1 == self.num_batches:
-            bx = self.x[-self.batch_size:]
-            by = self.y[-self.batch_size:]
+            bx[0] = self.x[-self.batch_size:]
+            by[0] = self.y[-self.batch_size:]
         else:
-            bx = self.x[i *self.batch_size:(i+1)*self.batch_size]
-            by = self.y[i*self.batch_size:(i+1)*self.batch_size]
-        return bx.reshape(-1, self.batch_size), by.reshape(-1, self.batch_size)
+            bx[0] = self.x[i *self.batch_size:(i+1)*self.batch_size]
+            by[0] = self.y[i*self.batch_size:(i+1)*self.batch_size]       
+        #print("{} {}: x {} to {}, y {} to {}".format(self.name,i, bx.min(), bx.max(), by.min(), by.max()))
+        return bx, by
 
 def main():
     os.system('clear')  # clear the terminal on linux
@@ -128,6 +133,13 @@ def main():
     else:
         db = os.environ['HOME']+'/.dashcam.software/dashcam.index'
     db = os.path.normpath(db)
+
+    '''
+    bdir='batches'
+    if not os.path.exists(bdir):
+        print("Creating folder '{}'".format(bdir))
+        os.makedirs(bdir)
+    '''
 
     '''
     Addressing CUDA/cuDNN driver issues on Windows
@@ -152,13 +164,12 @@ def main():
     '''prepare generators'''
     t, y = comp.get_track(track_id)
     v = y[:, 2]
-    Nsamples = t.shape[0]
-    Nvalid = 1000
-    gen = dsSplit("train", t[:Nsamples-Nvalid], v[:Nsamples-Nvalid])
-    valid_gen = dsSplit("validation", t[-Nvalid:], v[-Nvalid:])
+    gen = dsSplit("train", t, v)
+    valid_gen = dsSplit("validation", t[:1000], v[:1000])
 
     ''' define model'''
     opt = keras.optimizers.Adam(learning_rate=0.01)
+    #opt = keras.optimizers.SGD(lr=0.001, nesterov=True)
     inputs = Input(shape=(gen.batch_size))
 
     '''
@@ -167,29 +178,39 @@ def main():
     x = BatchNormalization()(x)
     '''
 
-    x = inputs
-    
+    #x = BatchNormalization()(inputs)
+    x= Dense(gen.batch_size)(inputs)
+    x = BatchNormalization()(x)
+    x = LeakyReLU(0.1)(x)
+    #--ReLU(max_value=200)(x)
+
     # compressing autoencoder
-    for i in [4096,4096, 4096, 4096, 1024, 512, 256, 128, 64, 64, 128, 256, 512]:
+    for i in [64,64,64]:
         x = Dense(i)(x)
         x = BatchNormalization()(x)
         x = LeakyReLU(0.1)(x)
+        #--ReLU(max_value=200)(x)
 
-    outputs = Dense(gen.batch_size)(x)
+    outputs = Dense(gen.batch_size, activation='relu')(x)
 
     model = keras.Model(inputs=inputs, outputs=outputs,
                         name="track_{}".format(track_id))
-    model.compile(loss='mean_squared_error',
-                  optimizer=opt, metrics=['mse'])
+    model.compile(loss='mean_squared_error', optimizer=opt, metrics=['mse'])
     model.summary()
 
-    es = EarlyStopping(monitor='val_loss', patience=30, mode='min',min_delta=0.01)
+    es = EarlyStopping(monitor='val_loss', patience=20, mode='auto',min_delta=0.01)
 
     model.fit(
         gen,
         validation_data=valid_gen,
         epochs=100,
+        shuffle=False,
         callbacks=[es])
+
+    tinp = np.zeros((1,gen.batch_size))
+    tinp[0]=t[:1000]
+    yt = model(tinp).numpy()
+    pass
 
 if __name__ == "__main__":
     main()
