@@ -72,7 +72,10 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     Hframe = 1920
     CHframe = 3 # Num channels per X
 
+    # Caching and data check
     fid_name = {} # file id to name dict to avoid sql query
+    Tmin = None 
+    Tmax = None
 
     '''
                         INITIALIZE (generator method)
@@ -266,15 +269,32 @@ class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     def load_speed_labels(self,d):
         t_v=np.array(d)
         T = t_v[:,0]
-        #self.t0 = int(T[0])
-        #T -= self.t0
+        self.Tmin = np.min(T)
+        self.Tmax = np.max(T)
         gps_speed = t_v[:,1]
         self.Vinterpoated = I.splrep(T, gps_speed, s=0)
+        # average pooling
+        Npool=1000
+        N = gps_speed.shape[0]
+        if Npool < N:
+            stride=int(np.gcd(N,Npool))
+        else:
+            stride=1
+        Vdown=np.mean(gps_speed.reshape(-1,stride),axis=1)
+        Tdown = np.linspace(np.min(T), np.max(T), Vdown.shape[0])
+
+        import matplotlib.pyplot as plt
+        plt.plot(T,gps_speed,'o')
+        plt.plot(Tdown, Vdown,'-x')
+        plt.show()
+        pass
 
     #
     def speed(self, Tmsec: int):
         # use interpolated gps speed
+        assert Tmsec>=self.Tmin and Tmsec<=self.Tmax, "Wrong time point"
         v = abs(I.splev(Tmsec, self.Vinterpoated, der=0))
+        assert not np.isnan(v), "Incorrect value interpolation"
         b = (v > self.Vthreshold).astype(int)
         return v*b
 
