@@ -13,7 +13,7 @@ from scipy import interpolate as I
 #from keras.models import Sequential
 from keras.layers import Conv2D, LeakyReLU, MaxPool2D, Dense, \
     TimeDistributed, GRU, Reshape, Input, Bidirectional, LSTM, \
-    RepeatVector, Wrapper, BatchNormalization, ReLU
+    RepeatVector, Wrapper, BatchNormalization, ReLU, Conv1D, Flatten
 import keras.optimizers
 import models
 from keras.callbacks import ModelCheckpoint, EarlyStopping
@@ -164,52 +164,55 @@ def main():
     '''prepare generators'''
     t, y = comp.get_track(track_id)
     v = y[:, 2]
-    gen = dsSplit("train", t, v)
-    valid_gen = dsSplit("validation", t[:1000], v[:1000])
 
-    ''' define model'''
-    opt = keras.optimizers.Adam(learning_rate=0.01)
-    #opt = keras.optimizers.SGD(lr=0.001, nesterov=True)
-    inputs = Input(shape=(gen.batch_size))
+    opt = keras.optimizers.Adam(amsgrad=True,learning_rate=0.01)
 
-    '''
-    x = Reshape(((-1, gen.batch_size)))(inputs)
-    x = Bidirectional(LSTM(gen.batch_size))(x)
-    x = BatchNormalization()(x)
-    '''
+    n=4096
+    model = keras.Sequential([
+        Dense(n, input_dim=1, activation='relu'),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+    ])
 
-    #x = BatchNormalization()(inputs)
-    x= Dense(gen.batch_size)(inputs)
-    x = BatchNormalization()(x)
-    x = LeakyReLU(0.1)(x)
-    #--ReLU(max_value=200)(x)
+    for i in range(4):
+        model.add(Dense(n))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU(0.1))
 
-    # compressing autoencoder
-    for i in [64,64,64]:
-        x = Dense(i)(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU(0.1)(x)
-        #--ReLU(max_value=200)(x)
+    model.add(Dense(1))
 
-    outputs = Dense(gen.batch_size, activation='relu')(x)
-
-    model = keras.Model(inputs=inputs, outputs=outputs,
-                        name="track_{}".format(track_id))
-    model.compile(loss='mean_squared_error', optimizer=opt, metrics=['mse'])
+    model.compile(loss='mean_squared_error', optimizer=opt)
     model.summary()
 
-    es = EarlyStopping(monitor='val_loss', patience=20, mode='auto',min_delta=0.01)
+    filepath = "best.hdf5"
+    '''
+    if os.path.exists(filepath):
+        model.load_weights(filepath)
+    '''
 
-    model.fit(
-        gen,
-        validation_data=valid_gen,
-        epochs=100,
-        shuffle=False,
-        callbacks=[es])
+    checkpoint = ModelCheckpoint(
+        filepath, monitor='loss',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
 
-    tinp = np.zeros((1,gen.batch_size))
-    tinp[0]=t[:1000]
-    yt = model(tinp).numpy()
+    es = EarlyStopping(monitor='val_loss', patience=5, mode='auto', min_delta=100.)
+
+    if True:
+        model.fit(
+            t,v,
+            validation_split=0.1,
+            epochs=100,
+            batch_size=1000,
+            shuffle=True,
+            callbacks=[es])
+
+    yhat = model.predict(t)   
+
+    import matplotlib.pyplot as plt
+    plt.plot(t, v, '-')
+    plt.plot(t, yhat, '-')
+    plt.show()
     pass
 
 if __name__ == "__main__":
