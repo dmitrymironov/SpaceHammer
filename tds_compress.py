@@ -13,7 +13,8 @@ from scipy import interpolate as I
 #from keras.models import Sequential
 from keras.layers import Conv2D, LeakyReLU, MaxPool2D, Dense, \
     TimeDistributed, GRU, Reshape, Input, Bidirectional, LSTM, \
-    RepeatVector, Wrapper, BatchNormalization, ReLU, Conv1D, Flatten
+    RepeatVector, Wrapper, BatchNormalization, ReLU, Conv1D, Flatten, \
+    AveragePooling1D
 import keras.optimizers
 import models
 from keras.callbacks import ModelCheckpoint, EarlyStopping
@@ -162,24 +163,73 @@ def main():
     track_id = 6
 
     '''prepare generators'''
-    t, y = comp.get_track(track_id)
-    v = y[:, 2]
+    T, y = comp.get_track(track_id)
+    V = y[:, 2]
 
+    '''
+    Manufacture training set
+    '''
+    Nwindow=256
+    stride=2
+    N=T.shape[0]
+    X=np.zeros(
+            (int(np.ceil((N-Nwindow)/stride)),Nwindow)
+        )
+    Y = np.zeros(
+        (int(np.ceil((N-Nwindow)/stride)), Nwindow)
+    )
+
+    for i in range(X.shape[0]):
+        beg=i*stride
+        end=beg+Nwindow
+        X[i]=T[beg:end]
+        Y[i]=V[beg:end]
+
+    '''
+    Create model
+    '''
     opt = keras.optimizers.Adam(amsgrad=True,learning_rate=0.01)
 
-    n=4096
     model = keras.Sequential([
-        Dense(n, input_dim=1, activation='relu'),
+        Input(shape=(Nwindow)),
+
+        Dense(Nwindow),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+        Dense(Nwindow),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+        Dense(Nwindow),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+
+        Reshape((-1,8)),
+        Conv1D(filters=64, kernel_size=7, strides=2, padding='same', name='Conv1'),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+        Conv1D(filters=128, kernel_size=5, strides=2,
+               padding='same', name='Conv2'),
+        Conv1D(filters=256, kernel_size=5, strides=2, padding='same', name='Conv3'),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+        Conv1D(filters=256, kernel_size=3, strides=1, name='Conv3_1'),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+
+        BatchNormalization(),
+        LeakyReLU(0.1),
+
+        Reshape((-1,8*64)),
+
+        LSTM(8*64,return_sequences=True),
+        BatchNormalization(),
+        LeakyReLU(0.1),
+        LSTM(8*64),
         BatchNormalization(),
         LeakyReLU(0.1),
     ])
 
-    for i in range(4):
-        model.add(Dense(n))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(0.1))
-
-    model.add(Dense(1))
+    model.add(Dense(Nwindow))
 
     model.compile(loss='mean_squared_error', optimizer=opt)
     model.summary()
@@ -196,22 +246,24 @@ def main():
         save_best_only=True,
         mode='auto')
 
-    es = EarlyStopping(monitor='val_loss', patience=5, mode='auto', min_delta=100.)
+    es = EarlyStopping(monitor='val_loss', patience=20, mode='auto', min_delta=100.)
 
     if True:
         model.fit(
-            t,v,
-            validation_split=0.1,
+            X,Y,
+            validation_split=0.2,
             epochs=100,
-            batch_size=1000,
+            batch_size=20,
             shuffle=True,
             callbacks=[es])
 
-    yhat = model.predict(t)   
+    yhat = model.predict(X)
 
     import matplotlib.pyplot as plt
-    plt.plot(t, v, '-')
-    plt.plot(t, yhat, '-')
+    #plt.plot(T, V)
+    for plot_idx in range(X.shape[0]):
+        plt.plot(X[plot_idx], Y[plot_idx])
+        plt.plot(X[plot_idx], yhat[plot_idx], '-')
     plt.show()
     pass
 
