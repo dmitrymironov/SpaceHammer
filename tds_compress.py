@@ -166,6 +166,11 @@ def main():
     T, y = comp.get_track(track_id)
     V = y[:, 2]
 
+    import matplotlib.pyplot as plt
+    plt.plot(T, V)
+    plt.show()
+    return 0
+
     '''
     Manufacture training set
     '''
