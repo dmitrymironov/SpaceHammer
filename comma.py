@@ -26,11 +26,12 @@ class FileRecord:
     def get_frame(self, frame_idx):
         assert frame_idx >= 0 & frame_idx <= self.frameCount, "Illegal frame idx"
         # set to a proper frame
-        actual_pos = self.file.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        actual_pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
         if actual_pos != frame_idx:
-            self.file.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        ret, self.img = self.file.cap.read()
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, self.img = self.cap.read()
         assert ret, "Broken video '{}'".format(self.name)
+        return self.img
 
     def __init__(self, name):
         if self.cap is not None:
@@ -96,6 +97,7 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
             frame2 = self.file.get_frame(self.file.framePos)
             self.batch_x[batch_pos] = tf.concat([frame1, frame2], axis=2)
         self.batch_y = self.speed_labels[start:end]
+        return self.batch_x, self.batch_y
 
 def meCuda():
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -116,6 +118,7 @@ def main():
     os.system('clear')  # clear the terminal on linux
 
     train = FramePairsGenerator('train','data/train.mp4','data/train.txt')
+
     opt = keras.optimizers.Adam(amsgrad=True, learning_rate=0.01)
 
     model = keras.Sequential([
@@ -138,8 +141,10 @@ def main():
                padding='same', name='Conv5_1'),
         Conv1D(filters=1024, kernel_size=3, strides=2,
                padding='same', name='Conv6'),
-        LSTM(8*64, return_sequences=True),
-        LSTM(8*64)
+        Reshape((-1, 4)),
+        LSTM(4, return_sequences=True),
+        LSTM(4),
+        Dense(1)
     ])
 
     model.compile(loss='mean_squared_error', optimizer=opt)
@@ -147,13 +152,7 @@ def main():
 
     es = EarlyStopping(monitor='val_loss', patience=20,
                        mode='auto', min_delta=100.)
-    model.fit(
-        train,
-        validation_split=0.3,
-        epochs=100,
-        batch_size=20,
-        shuffle=True,
-        callbacks=[es])
+    model.fit(train,epochs=100,batch_size=20,shuffle=True,callbacks=[es])
     pass
 
 if __name__ == "__main__":
