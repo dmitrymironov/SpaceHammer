@@ -1,50 +1,37 @@
 import tensorflow as tf
 import tensorflow.keras.utils
-import sqlite3, os, cv2, datetime
+import os, cv2, datetime
 import numpy as np
-from scipy import interpolate as I
 
 class FileRecord:
-    id = None # id in the database
     name = None # file path
-    pos = None # position in the file list
-    framePos = None # current frame
-    t0 = 0 # Start time
-    Nff = 1800  # Frames per file. On our dataset it's constant
     cap = None # video capture handler
+    frameCount = 0 # num of frames in the file
+    img = None # Last frame accessed
 
-    def nextFramePos(self):
-        self.framePos = self.framePos+1
+    def get_frame(self, frame_idx):
+        assert frame_idx >= 0 & frame_idx <= self.frameCount, "Illegal frame idx"
+        # set to a proper frame
+        actual_pos = self.file.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        if actual_pos != frame_idx:
+            self.file.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, self.img = self.file.cap.read()
+        assert ret, "Broken video '{}'".format(self.name)
 
-    def init(self, id, name, t0):
+    def init(self, name):
         if self.cap is not None:
             self.cap.release()
             self.cap = None
-        self.id=id
         self.name = name
-        self.t0 = t0
-        self.framePos=0
-
         self.cap = cv2.VideoCapture(self.name)
-        frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        assert frameCount >= self.Nff, "Unexpected frame count {} in '{}', should be 0 .. {}".format(
-            frameCount, self.name, self.Nff)
+        self.frameCount = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
 
     def reset(self):
-        self.pos=-1
-        self.id=-1
         self.framePos=-1
         self.name=None
-        self.t0=-1
-
-'''
-Create inputs and targets from videos and geo-tagged video sequence
-Inputs is a set of sliding windows prepared for convolution as in PoseConvGRU
-Targets are speed regression values
-'''
 
 class tfGarminFrameGen(tensorflow.keras.utils.Sequence):
     file = FileRecord()
