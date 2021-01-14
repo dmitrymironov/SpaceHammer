@@ -3,7 +3,7 @@ import tensorflow.keras.utils
 from tensorflow import keras
 from keras.layers import Conv2D, LeakyReLU, MaxPool2D, Dense, \
     TimeDistributed, GRU, Reshape, Input, Bidirectional, LSTM, \
-    RepeatVector, Wrapper, BatchNormalization, ReLU, Conv1D, Flatten, \
+    RepeatVector, Wrapper, BatchNormalization, ReLU, Conv2D, Flatten, \
     AveragePooling1D
 import keras.optimizers
 import models
@@ -46,6 +46,7 @@ class FileRecord:
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
         print("Loaded {} fps {}x{} '{}' ".format(self.FPS,self.W,self.H,self.name))
+        pass
 
     def reset(self):
         self.framePos = -1
@@ -58,8 +59,8 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
 
     # feeding into the model
     num_batches: int = -1  # number of batches
-    Xsize = 10  # N of temporal frame pairs in X
-    stride = 4  # temporal stride between batches
+    Xsize = 8  # N of temporal frame pairs in X
+    stride = 5  # temporal stride between batches
 
     '''placeholders'''
     batch_x = None 
@@ -118,38 +119,55 @@ def main():
 
     os.system('clear')  # clear the terminal on linux
 
+    model_best = "best.hdf5"
     train = FramePairsGenerator('train','data/train.mp4','data/train.txt')
 
     opt = keras.optimizers.Adam(amsgrad=True, learning_rate=0.01)
-    k=4
+    k=8
     input_shape = (train.file.target_dim[1], train.file.target_dim[0],6)
     model = keras.Sequential([
         Input(shape=input_shape),
-        Conv1D(filters=64, kernel_size=7, strides=2,
-               padding='same', name='Conv1'),
-        Conv1D(filters=128, kernel_size=5, strides=2,
-               padding='same', name='Conv2'),
-        Conv1D(filters=256, kernel_size=5, strides=2,
-               padding='same', name='Conv3'),
-        Conv1D(filters=256, kernel_size=3, strides=1,
-               padding='same', name='Conv3_1'),
-        Conv1D(filters=512, kernel_size=3, strides=2,padding='same', name='Conv4'),
-        Conv1D(filters=512, kernel_size=3, strides=1,padding='same', name='Conv4_1'),
-        Conv1D(filters=512, kernel_size=3, strides=2,padding='same', name='Conv5'),
-        Conv1D(filters=512, kernel_size=3, strides=1,padding='same', name='Conv5_1'),
-        #Conv1D(filters=k*64, kernel_size=3, strides=2,padding='same', name='Conv6'),
+        Conv2D(filters=64, kernel_size=7, strides=2,padding='same', name='Conv1'),
+        BatchNormalization(),LeakyReLU(0.1),
+        Conv2D(filters=128, kernel_size=5, strides=2,padding='same', name='Conv2'),
+        BatchNormalization(),LeakyReLU(0.1),
+        Conv2D(filters=256, kernel_size=5, strides=2, padding='same', name='Conv3'),
+        BatchNormalization(),LeakyReLU(0.1),
+        Conv2D(filters=256, kernel_size=3, strides=1,padding='same', name='Conv3_1'),
+        BatchNormalization(), LeakyReLU(0.1),
+        Conv2D(filters=512, kernel_size=3, strides=2,padding='same', name='Conv4'),
+        BatchNormalization(), LeakyReLU(0.1),
+        Conv2D(filters=512, kernel_size=3, strides=1,padding='same', name='Conv4_1'),
+        BatchNormalization(), LeakyReLU(0.1),
+        Conv2D(filters=512, kernel_size=3, strides=2,padding='same', name='Conv5'),
+        BatchNormalization(), LeakyReLU(0.1),
+        Conv2D(filters=512, kernel_size=3, strides=1,padding='same', name='Conv5_1'),
+        BatchNormalization(), LeakyReLU(0.1),
+        Conv2D(filters=k*64, kernel_size=3, strides=2,padding='same', name='Conv6'),
         Reshape((-1, k*64)),
         LSTM(k*64, return_sequences=True),
+        BatchNormalization(), LeakyReLU(0.1),
         LSTM(k*64),
+        BatchNormalization(), LeakyReLU(0.1),
         Dense(1)
     ])
 
     model.compile(loss='mean_squared_error', optimizer=opt)
     model.summary()
+    if os.path.exists(model_best):
+        print("Loading weights from '{}'".format(model_best))
+        model.load_weights(model_best)
+
+    checkpoint = ModelCheckpoint(
+        model_best, monitor='val_loss',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
 
     es = EarlyStopping(monitor='val_loss', patience=20,
                        mode='auto', min_delta=100.)
-    model.fit(train,epochs=100,batch_size=20,shuffle=True,callbacks=[es])
+    model.fit(train, epochs=100, batch_size=2,
+              shuffle=True, callbacks=[es, checkpoint])
     pass
 
 if __name__ == "__main__":
