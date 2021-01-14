@@ -19,6 +19,7 @@ class FileRecord:
     cap = None  # video capture handler
     frameCount = 0  # num of frames in the file
     img = None  # Last frame accessed
+    target_dim = (240,320)
     W = 0
     H = 0
     FPS = 0
@@ -31,6 +32,7 @@ class FileRecord:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, self.img = self.cap.read()
         assert ret, "Broken video '{}'".format(self.name)
+        self.img = cv2.resize(self.img, self.target_dim)
         return self.img
 
     def __init__(self, name):
@@ -56,8 +58,8 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
 
     # feeding into the model
     num_batches: int = -1  # number of batches
-    batch_size = 15  # N of temporal frame pairs in a batch
-    batch_stride = 4  # temporal stride between batches
+    Xsize = 10  # N of temporal frame pairs in X
+    stride = 4  # temporal stride between batches
 
     '''placeholders'''
     batch_x = None 
@@ -69,11 +71,11 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
         self.name = name
         self.file = FileRecord(video_fn)
         self.num_batches = int(
-            (self.file.frameCount-self.batch_size)/self.batch_stride)
+            (self.file.frameCount-self.Xsize)/self.stride)
         self.batch_x = np.zeros(
-            (self.batch_size,self.file.H, self.file.W,6), 
+            (self.Xsize, self.file.target_dim[1], self.file.target_dim[0], 6),
             dtype='float16')
-        self.batch_y = np.zeros((self.batch_size), dtype='float16')
+        self.batch_y = np.zeros((self.Xsize), dtype='float16')
         self.speed_labels = np.loadtxt(speed_labels)
 
     def __len__(self):
@@ -85,10 +87,10 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
         frame1 = None
         frame2 = None
         # position in a current video file
-        start = int(batch_idx*self.batch_stride)
-        end = start + self.batch_size
+        start = int(batch_idx*self.stride)
+        end = start + self.Xsize
         self.file.framePos = start
-        for batch_pos in range(self.batch_size):
+        for batch_pos in range(self.Xsize):
             if frame2 is None:
                 frame1 = self.file.get_frame(self.file.framePos)
             else:
@@ -99,7 +101,8 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
         self.batch_y = self.speed_labels[start:end]
         return self.batch_x, self.batch_y
 
-def meCuda():
+def main():
+
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:
@@ -113,16 +116,15 @@ def meCuda():
             # Memory growth must be set before GPUs have been initialized
             print(e)
 
-def main():
-    meCuda()
     os.system('clear')  # clear the terminal on linux
 
     train = FramePairsGenerator('train','data/train.mp4','data/train.txt')
 
     opt = keras.optimizers.Adam(amsgrad=True, learning_rate=0.01)
-
+    k=4
+    input_shape = (train.file.target_dim[1], train.file.target_dim[0],6)
     model = keras.Sequential([
-        Input(shape=(480,640,6)),
+        Input(shape=input_shape),
         Conv1D(filters=64, kernel_size=7, strides=2,
                padding='same', name='Conv1'),
         Conv1D(filters=128, kernel_size=5, strides=2,
@@ -131,19 +133,14 @@ def main():
                padding='same', name='Conv3'),
         Conv1D(filters=256, kernel_size=3, strides=1,
                padding='same', name='Conv3_1'),
-        Conv1D(filters=512, kernel_size=3, strides=2,
-               padding='same', name='Conv4'),
-        Conv1D(filters=512, kernel_size=3, strides=1,
-               padding='same', name='Conv4_1'),
-        Conv1D(filters=512, kernel_size=3, strides=2,
-               padding='same', name='Conv5'),
-        Conv1D(filters=512, kernel_size=3, strides=1,
-               padding='same', name='Conv5_1'),
-        Conv1D(filters=1024, kernel_size=3, strides=2,
-               padding='same', name='Conv6'),
-        Reshape((-1, 4)),
-        LSTM(4, return_sequences=True),
-        LSTM(4),
+        Conv1D(filters=512, kernel_size=3, strides=2,padding='same', name='Conv4'),
+        Conv1D(filters=512, kernel_size=3, strides=1,padding='same', name='Conv4_1'),
+        Conv1D(filters=512, kernel_size=3, strides=2,padding='same', name='Conv5'),
+        Conv1D(filters=512, kernel_size=3, strides=1,padding='same', name='Conv5_1'),
+        #Conv1D(filters=k*64, kernel_size=3, strides=2,padding='same', name='Conv6'),
+        Reshape((-1, k*64)),
+        LSTM(k*64, return_sequences=True),
+        LSTM(k*64),
         Dense(1)
     ])
 
