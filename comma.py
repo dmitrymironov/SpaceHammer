@@ -1,5 +1,14 @@
 import tensorflow as tf
 import tensorflow.keras.utils
+from tensorflow import keras
+from keras.layers import Conv2D, LeakyReLU, MaxPool2D, Dense, \
+    TimeDistributed, GRU, Reshape, Input, Bidirectional, LSTM, \
+    RepeatVector, Wrapper, BatchNormalization, ReLU, Conv1D, Flatten, \
+    AveragePooling1D
+import keras.optimizers
+import models
+from keras.callbacks import ModelCheckpoint, EarlyStopping
+
 import os
 import cv2
 import datetime
@@ -33,6 +42,7 @@ class FileRecord:
         self.W = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.H = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.FPS = int(self.cap.get(cv2.CAP_PROP_FPS))
+        print("Loaded {} fps {}x{} '{}' ".format(self.FPS,self.W,self.H,self.name))
 
     def reset(self):
         self.framePos = -1
@@ -87,10 +97,64 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
             self.batch_x[batch_pos] = tf.concat([frame1, frame2], axis=2)
         self.batch_y = self.speed_labels[start:end]
 
+def meCuda():
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(
+                logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
 def main():
+    meCuda()
     os.system('clear')  # clear the terminal on linux
 
     train = FramePairsGenerator('train','data/train.mp4','data/train.txt')
+    opt = keras.optimizers.Adam(amsgrad=True, learning_rate=0.01)
+
+    model = keras.Sequential([
+        Input(shape=(480,640,6)),
+        Conv1D(filters=64, kernel_size=7, strides=2,
+               padding='same', name='Conv1'),
+        Conv1D(filters=128, kernel_size=5, strides=2,
+               padding='same', name='Conv2'),
+        Conv1D(filters=256, kernel_size=5, strides=2,
+               padding='same', name='Conv3'),
+        Conv1D(filters=256, kernel_size=3, strides=1,
+               padding='same', name='Conv3_1'),
+        Conv1D(filters=512, kernel_size=3, strides=2,
+               padding='same', name='Conv4'),
+        Conv1D(filters=512, kernel_size=3, strides=1,
+               padding='same', name='Conv4_1'),
+        Conv1D(filters=512, kernel_size=3, strides=2,
+               padding='same', name='Conv5'),
+        Conv1D(filters=512, kernel_size=3, strides=1,
+               padding='same', name='Conv5_1'),
+        Conv1D(filters=1024, kernel_size=3, strides=2,
+               padding='same', name='Conv6'),
+        LSTM(8*64, return_sequences=True),
+        LSTM(8*64)
+    ])
+
+    model.compile(loss='mean_squared_error', optimizer=opt)
+    model.summary()
+
+    es = EarlyStopping(monitor='val_loss', patience=20,
+                       mode='auto', min_delta=100.)
+    model.fit(
+        train,
+        validation_split=0.3,
+        epochs=100,
+        batch_size=20,
+        shuffle=True,
+        callbacks=[es])
+    pass
 
 if __name__ == "__main__":
     main()
