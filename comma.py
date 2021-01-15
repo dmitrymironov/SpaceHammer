@@ -60,19 +60,32 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
     # feeding into the model
     num_batches: int = -1  # number of batches
     Xsize = 8  # N of temporal frame pairs in X
-    stride = 5  # temporal stride between batches
+    stride = 4  # temporal stride between batches
+    startFrame=0
+    endFrame=0
 
     '''placeholders'''
     batch_x = None 
     batch_y = None 
 
-    def __init__(self, name, video_fn, speed_labels):
+    def __init__(self, name, video_fn, speed_labels, split=0.7):
         assert os.path.exists(video_fn), 'Video file does not exist'
         assert os.path.exists(speed_labels), 'Speed file unreadable'
         self.name = name
         self.file = FileRecord(video_fn)
+        if (name == 'valid'):
+            self.startFrame = int(self.file.frameCount*split)
+            self.endFrame = self.file.frameCount
+            self.Xsize = 10
+            self.stride = 43
+        elif (name == 'train'):
+            self.startFrame = 0
+            self.endFrame = int(self.file.frameCount*split)
+            self.Xsize = 8
+            self.stride = 4
+        N = self.endFrame-self.startFrame
         self.num_batches = int(
-            (self.file.frameCount-self.Xsize)/self.stride)
+            (N-self.Xsize)/self.stride)
         self.batch_x = np.zeros(
             (self.Xsize, self.file.target_dim[1], self.file.target_dim[0], 6),
             dtype='float16')
@@ -88,7 +101,7 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
         frame1 = None
         frame2 = None
         # position in a current video file
-        start = int(batch_idx*self.stride)
+        start = int(batch_idx*self.stride)+self.startFrame
         end = start + self.Xsize
         self.file.framePos = start
         for batch_pos in range(self.Xsize):
@@ -120,7 +133,11 @@ def main():
     os.system('clear')  # clear the terminal on linux
 
     model_best = "best.hdf5"
-    train = FramePairsGenerator('train','data/train.mp4','data/train.txt')
+    data_folder = 'D:/comma_ai.data/'
+    train_file='{}train.mp4'.format(data_folder)
+    train_labels = '{}train.txt'.format(data_folder)
+    train = FramePairsGenerator('train', train_file, train_labels)
+    valid = FramePairsGenerator('valid', train_file, train_labels)
 
     opt = keras.optimizers.Adam(amsgrad=True, learning_rate=0.01)
     k=8
@@ -143,7 +160,7 @@ def main():
         BatchNormalization(), LeakyReLU(0.1),
         Conv2D(filters=512, kernel_size=3, strides=1,padding='same', name='Conv5_1'),
         BatchNormalization(), LeakyReLU(0.1),
-        Conv2D(filters=k*64, kernel_size=3, strides=2,padding='same', name='Conv6'),
+        Conv2D(filters=1024, kernel_size=3, strides=2,padding='same', name='Conv6'),
         Reshape((-1, k*64)),
         LSTM(k*64, return_sequences=True),
         BatchNormalization(), LeakyReLU(0.1),
@@ -166,8 +183,8 @@ def main():
 
     es = EarlyStopping(monitor='val_loss', patience=20,
                        mode='auto', min_delta=100.)
-    model.fit(train, epochs=100, batch_size=2,
-              shuffle=True, callbacks=[es, checkpoint])
+
+    model.fit(train, validation_data=valid, epochs=100, callbacks=[es, checkpoint])
     pass
 
 if __name__ == "__main__":
