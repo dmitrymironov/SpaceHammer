@@ -68,7 +68,7 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
     batch_x = None 
     batch_y = None 
 
-    def __init__(self, name, video_fn, speed_labels, split=0.7):
+    def __init__(self, name, video_fn, speed_labels, split=0.9):
         assert os.path.exists(video_fn), 'Video file does not exist'
         assert os.path.exists(speed_labels), 'Speed file unreadable'
         self.name = name
@@ -77,12 +77,12 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
             self.startFrame = int(self.file.frameCount*split)
             self.endFrame = self.file.frameCount
             self.Xsize = 10
-            self.stride = 43
+            self.stride = 5
         elif (name == 'train'):
             self.startFrame = 0
             self.endFrame = int(self.file.frameCount*split)
             self.Xsize = 8
-            self.stride = 4
+            self.stride = 2
         N = self.endFrame-self.startFrame
         self.num_batches = int(
             (N-self.Xsize)/self.stride)
@@ -132,14 +132,16 @@ def main():
 
     os.system('clear')  # clear the terminal on linux
 
-    model_best = "best.hdf5"
     data_folder = 'D:/comma_ai.data/'
     train_file='{}train.mp4'.format(data_folder)
     train_labels = '{}train.txt'.format(data_folder)
+    model_best = '{}/save/saved-model-07-72.51.hdf5'.format(data_folder)
+
     train = FramePairsGenerator('train', train_file, train_labels)
     valid = FramePairsGenerator('valid', train_file, train_labels)
 
-    opt = keras.optimizers.Adam(amsgrad=True, learning_rate=0.01)
+    #opt = keras.optimizers.Nadam(learning_rate=0.01)
+    opt = keras.optimizers.Adam(amsgrad=True, learning_rate=0.001)
     k=8
     input_shape = (train.file.target_dim[1], train.file.target_dim[0],6)
     model = keras.Sequential([
@@ -175,16 +177,17 @@ def main():
         print("Loading weights from '{}'".format(model_best))
         model.load_weights(model_best)
 
+    filepath = data_folder + "/save/saved-model-{epoch:02d}-{val_loss:.2f}.hdf5"
     checkpoint = ModelCheckpoint(
-        model_best, monitor='val_loss',
+        filepath, monitor='val_loss',
         verbose=1,
-        save_best_only=True,
+        save_best_only=False,
         mode='auto')
 
-    es = EarlyStopping(monitor='val_loss', patience=20,
-                       mode='auto', min_delta=100.)
+    es = EarlyStopping(monitor='val_loss', patience=200,
+                       mode='auto', min_delta=0.01)
 
-    model.fit(train, validation_data=valid, epochs=100, callbacks=[es, checkpoint])
+    model.fit(train, validation_data=valid, epochs=1000, callbacks=[es, checkpoint])
     pass
 
 if __name__ == "__main__":
