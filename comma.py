@@ -1,13 +1,3 @@
-'''
-Using weights from 
-/d/comma_ai.data/github/flownet2/models/FlowNet2-s/FlowNet2-S_weights.caffemodel.h5
-p="/d/comma_ai.data/github/flownet2/models/FlowNet2-s/FlowNet2-S"
-i="/d/comma_ai.data/import/"
-mmconvert -sf caffe -in ${i}/FlowNet2-S_deploy.prototxt -iw ${p}_weights.caffemodel --dstFramework keras -om ${i}/flownet_s.npy
-
-Interesting find 
-https://github.com/pierluigiferrari/caffe_weight_converter/blob/master/caffe_weight_converter.py
-'''
 import tensorflow as tf
 import tensorflow.keras.utils
 from tensorflow import keras
