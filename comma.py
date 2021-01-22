@@ -18,7 +18,7 @@ from keras.layers import Conv2D, LeakyReLU, MaxPool2D, Dense, \
 import keras.optimizers
 import models
 from keras.callbacks import ModelCheckpoint, EarlyStopping
-
+import platform
 import os
 import cv2
 import datetime
@@ -79,8 +79,10 @@ class FramePairsGenerator(tensorflow.keras.utils.Sequence):
     batch_y = None 
 
     def __init__(self, name, video_fn, speed_labels, split=0.9):
-        assert os.path.exists(video_fn), 'Video file does not exist'
-        assert os.path.exists(speed_labels), 'Speed file unreadable'
+        assert os.path.exists(
+            video_fn), 'Video file {} does not exist'.format(video_fn)
+        assert os.path.exists(
+            speed_labels), 'Speed file {} is unreadable'.format(speed_labels)
         self.name = name
         self.file = FileRecord(video_fn)
         if (name == 'valid'):
@@ -140,9 +142,14 @@ def main():
             # Memory growth must be set before GPUs have been initialized
             print(e)
 
-    os.system('clear')  # clear the terminal on linux
+    #os.system('clear')  # clear the terminal on linux
+    print('TensorFlow ' + tf.__version__)
+    print('Keras ' + keras.__version__)
 
-    data_folder = 'D:/comma_ai.data/'
+    if any(platform.win32_ver()):
+        data_folder = 'D:/comma_ai.data/'
+    else:
+        data_folder = '/4tb/comma_ai.data/'
     train_file='{}train.mp4'.format(data_folder)
     train_labels = '{}train.txt'.format(data_folder)
     model_best = '{}/save/saved-model-07-72.51.hdf5'.format(data_folder)
